@@ -1,0 +1,31 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd:*)",
+      "Bash(npm run:*)",
+      "Bash(npm test:*)",
+      "Bash(npm ci:*)",
+      "Bash(npx vue-tsc:*)",
+      "Bash(npx eslint:*)",
+      "Bash(npx vitest:*)",
+      "Bash(uv run:*)",
+      "Bash(uv sync:*)",
+      "Bash(uv lock:*)",
+      "Bash(mise exec:*)",
+      "Bash(mise install:*)",
+      "Bash(mise ls:*)",
+      "Bash(mise trust:*)",
+      "Bash(ffprobe:*)",
+      "Bash(git status:*)",
+      "Bash(git log:*)",
+      "Bash(git diff:*)",
+      "Bash(git show:*)",
+      "Bash(git branch:*)"
+    ],
+    "deny": [
+      "Bash(git merge*)",
+      "Bash(git rebase*)",
+      "Bash(git reset*)"
+    ]
+  }
+}

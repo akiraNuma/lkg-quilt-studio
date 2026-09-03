@@ -1,0 +1,32 @@
+---
+name: review-loop
+description: lkg-quilt-studio の変更を code-reviewer サブエージェントでレビューし、MUST/SHOULD が 0 件になるまで「レビュー→修正→再レビュー」を反復する推論的センサー。コミット前に使う。Use for: review-loop, レビュー, コードレビュー
+---
+
+# review-loop — LLM-as-judge レビュー反復
+
+## 前提（計算的センサーが先）
+
+開始前に変更した側の機械チェックが緑であること。落ちていれば先に直す。
+
+```bash
+cd converter && uv run poe check   # converter を変更した場合
+cd viewer && npm run check         # viewer を変更した場合
+```
+
+## ループ
+
+1. `code-reviewer` サブエージェントにレビューを依頼する（観点の正本は**このリポジトリの**
+   `.claude/agents/code-reviewer.md`。ここに観点を複製しない）
+2. 指摘を MUST / SHOULD / NICE で受け取る
+3. **MUST と SHOULD が 0 件なら終了。** NICE は対応するか見送るかを報告して判断を仰ぐ
+4. 残っていれば修正する。指摘に納得できない場合は反論せず事実（コード・公式リファレンス）で
+   確認し、誤検知ならその根拠を添えて NICE 扱いに落とす
+5. 修正後、前提の機械チェックを再実行して緑を確認する
+6. 1 に戻る
+
+## 注意
+
+- 同じ指摘が 2 回続くか 5 ラウンドを超えたら、修正がズレている。立ち止まってユーザーに相談する
+- 修正でスコープを広げない（指摘への対応以外のリファクタを混ぜない）
+- Looking Glass の仕様・モデルの入出力に関わる指摘は、公式リファレンスを確認してから直す

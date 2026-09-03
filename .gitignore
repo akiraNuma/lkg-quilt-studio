@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Node
+node_modules/
+dist/
+
+# 入出力の実データ（サイズが大きいので git に入れない）
+/samples/
+/out/
+
+# モデルの重み
+/weights/
+
+.DS_Store
+.env
+
+# Claude Code の端末ローカル設定
+.claude/settings.local.json

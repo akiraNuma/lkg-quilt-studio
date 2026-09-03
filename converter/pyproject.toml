@@ -1,0 +1,42 @@
+[project]
+name = "lkg-quilt-converter"
+version = "0.1.0"
+description = "ステレオ動画を Looking Glass 用の quilt 動画へ変換する CLI"
+authors = [{ name = "akiraNuma" }]
+requires-python = ">=3.14"
+dependencies = []
+
+[project.scripts]
+lkg-quilt-converter = "lkg_quilt_converter:main"
+
+[build-system]
+requires = ["uv_build>=0.12.9,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "mypy>=2.3.1",
+    "poethepoet>=0.48.0",
+    "pytest>=9.1.1",
+    "ruff>=0.16.5",
+]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+# RUF001-003 は全角括弧などを「英字と紛れる文字」として弾く。日本語コメントで統一する方針と衝突する
+ignore = ["RUF001", "RUF002", "RUF003"]
+
+[tool.mypy]
+strict = true
+files = ["src", "tests"]
+
+[tool.poe.tasks]
+check = ["_format_check", "_lint", "_typecheck", "_test"]
+format = [{ cmd = "ruff format ." }, { cmd = "ruff check --fix ." }]
+_format_check = "ruff format --check ."
+_lint = "ruff check ."
+_typecheck = "mypy"
+_test = "pytest"
