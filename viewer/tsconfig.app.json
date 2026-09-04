@@ -3,6 +3,14 @@
   "compilerOptions": {
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
     "types": ["vite/client"],
+
+    /* @lookingglass/bridge の exports には "types" が無く、moduleResolution: bundler では
+       同梱の型定義に届かない。上流の型をそのまま使うために直接指す */
+    "paths": {
+      "@lookingglass/bridge": [
+        "./node_modules/@lookingglass/bridge/dist/index.d.ts"
+      ]
+    },
     "allowArbitraryExtensions": true,
 
     /* Linting */

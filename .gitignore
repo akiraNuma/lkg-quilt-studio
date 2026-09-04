@@ -22,3 +22,9 @@ dist/
 
 # Claude Code の端末ローカル設定
 .claude/settings.local.json
+
+# Playwright MCP の作業ファイル（スクリーンショット・コンソールログ）
+.playwright-mcp/
+
+# compose が作る out/ のマウント先（中身はリポジトリ直下の out/）
+/viewer/public/out/

@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Big Buck Bunny（Blender Foundation / CC-BY 3.0）の上下並びステレオ版から、
+# 動作確認用に 6 秒だけ切り出して samples/ に置く。
+#
+# 配布物は 434 MB の zip だが、格納されている mp4 は先頭に moov があり deflate は
+# 逐次展開できる。先頭 57 MB だけ取って展開すれば冒頭 90 秒ぶんが読めるので、
+# 全部落とさずに済む。
+set -euo pipefail
+
+ZIP_URL=https://download.blender.org/demo/movies/BBB/bbb_sunflower_1080p_30fps_stereo_abl.mp4.zip
+PREFIX_BYTES=60000000
+CLIP_START=53
+CLIP_SECONDS=6
+
+repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+output=$repo/samples/bbb_stereo_tb.mp4
+
+if [ -f "$output" ]; then
+    echo "$output はすでにある。作り直すなら消してから実行する"
+    exit 0
+fi
+
+work=$(mktemp -d "$repo/samples/.fetch.XXXXXX")
+trap 'rm -rf "$work"' EXIT
+
+echo "1/3 先頭 $((PREFIX_BYTES / 1000000)) MB を取得する"
+curl -fL --progress-bar -r "0-$PREFIX_BYTES" "$ZIP_URL" -o "$work/prefix.zip"
+
+echo "2/3 zip の中の mp4 を展開する"
+python3 - "$work/prefix.zip" "$work/head.mp4" <<'PY'
+import sys, zlib, pathlib
+
+source, target = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
+raw = source.read_bytes()
+# ローカルファイルヘッダは 30 バイトの固定部 + ファイル名 + extra field
+name_length = int.from_bytes(raw[26:28], "little")
+extra_length = int.from_bytes(raw[28:30], "little")
+body = raw[30 + name_length + extra_length :]
+# 途中で切れた deflate ストリームなので、末尾の Error は無視して取れた分だけ書く
+target.write_bytes(zlib.decompressobj(-zlib.MAX_WBITS).decompress(body))
+PY
+
+echo "3/3 ${CLIP_START} 秒から ${CLIP_SECONDS} 秒を切り出す"
+relative=${work#"$repo"/}
+docker compose --project-directory "$repo" run --rm --entrypoint ffmpeg converter \
+    -hide_banner -v error \
+    -ss "$CLIP_START" -t "$CLIP_SECONDS" -i "$relative/head.mp4" \
+    -map 0:v:0 -map 0:a:0 \
+    -c:v libx264 -crf 18 -pix_fmt yuv420p -c:a aac -b:a 128k \
+    -movflags +faststart -y "samples/$(basename "$output")"
+
+echo
+echo "できた: samples/$(basename "$output")（1920x2160 の上下並び・30 fps）"
+echo "変換する: docker compose run --rm converter convert samples/$(basename "$output") --layout tb --span 1.2 --output-dir out"

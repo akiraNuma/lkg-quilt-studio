@@ -1,0 +1,347 @@
+"""変換ジョブの受け付けと実行。HTTP から切り離してあるので単体でテストできる。
+
+変換は CPU を使い切るので、ワーカーは 1 本だけにして順番に処理する。
+"""
+
+import json
+import queue
+import threading
+import time
+import uuid
+from collections.abc import Callable
+from dataclasses import asdict, dataclass, replace
+from pathlib import Path
+from typing import Literal
+
+from .dibr import SynthesisParams
+from .fisheye import DEFAULT_FOV, PROJECTIONS, Projection
+from .pipeline import ConvertOptions, convert
+from .quilt import PRESETS, QuiltSpec
+from .sources import Source, SourceStore
+from .stereo import FIT_MODES, LAYOUTS, FitMode, StereoLayout
+
+JobStatus = Literal["queued", "running", "done", "failed", "cancelled"]
+
+STATE_FILE = "job.json"
+
+
+@dataclass(frozen=True)
+class ConvertRequest:
+    """UI から受け取る設定。CLI の引数のうち、画面から触る意味があるものだけ。"""
+
+    layout: StereoLayout = "sbs"
+    display: str = "16"
+    fit: FitMode = "crop"
+    projection: Projection = "flat"
+    fov: float = DEFAULT_FOV
+    swap_eyes: bool = False
+    span: float = 2.0
+    convergence: str = "auto"
+    start: int = 0
+    frames: int | None = None
+    copy_audio: bool = True
+
+    def __post_init__(self) -> None:
+        if self.layout not in LAYOUTS:
+            raise ValueError(
+                f"layout は {'/'.join(LAYOUTS)} のいずれか（受け取った値: {self.layout})"
+            )
+        if self.display not in PRESETS:
+            raise ValueError(
+                f"display は {'/'.join(sorted(PRESETS))} のいずれか（受け取った値: {self.display})"
+            )
+        if self.projection not in PROJECTIONS:
+            raise ValueError(
+                f"projection は {'/'.join(PROJECTIONS)} のいずれか"
+                f"（受け取った値: {self.projection})"
+            )
+        if not 0.0 < self.fov < 180.0:
+            raise ValueError(f"fov は 0 より大きく 180 未満（受け取った値: {self.fov}）")
+        if self.fit not in FIT_MODES:
+            raise ValueError(f"fit は {'/'.join(FIT_MODES)} のいずれか（受け取った値: {self.fit})")
+        if self.layout == "separate":
+            raise ValueError("separate は動画 2 本が要るので、この画面からは扱えない")
+        if self.span <= 0:
+            raise ValueError(f"span は正の数（受け取った値: {self.span}）")
+        if self.start < 0:
+            raise ValueError(f"start は 0 以上（受け取った値: {self.start}）")
+        if self.frames is not None and self.frames < 1:
+            raise ValueError(f"frames は 1 以上（受け取った値: {self.frames}）")
+        self.convergence_value()
+
+    def convergence_value(self) -> float:
+        """`auto` を 0.0 に潰して返す。auto かどうかは `is_auto_convergence` で見る。"""
+        if self.convergence == "auto":
+            return 0.0
+        try:
+            return float(self.convergence)
+        except ValueError as invalid:
+            raise ValueError(
+                f"convergence は数値か auto（受け取った値: {self.convergence}）"
+            ) from invalid
+
+    @property
+    def is_auto_convergence(self) -> bool:
+        return self.convergence == "auto"
+
+    def spec(self) -> QuiltSpec:
+        return PRESETS[self.display]
+
+
+@dataclass(frozen=True)
+class Job:
+    """1 件の変換の状態。UI へはこのままの形で JSON にして返す。"""
+
+    id: str
+    source_id: str
+    source_name: str
+    status: JobStatus
+    request: ConvertRequest
+    created_at: float
+    started_at: float | None = None
+    """変換を始めた時刻。残り時間はここからの実測で出す（プレビュー 1 枚からでは外れる）。"""
+
+    done_frames: int = 0
+    total_frames: int = 0
+    output_name: str | None = None
+    error: str | None = None
+
+    @property
+    def progress(self) -> float:
+        """0.0〜1.0。総フレーム数が分かる前は 0.0 を返す。"""
+        if self.status == "done":
+            return 1.0
+        if not self.total_frames:
+            return 0.0
+        return min(self.done_frames / self.total_frames, 1.0)
+
+
+class _Cancelled(Exception):
+    """中止の合図。進捗のコールバックから投げて変換を巻き戻す。"""
+
+
+class JobStore:
+    """ジョブの状態と成果物を `root` の下に置き、ワーカー 1 本で順に変換する。
+
+    プロセスを再起動しても済んだジョブの成果物を配れるよう、状態はジョブごとの
+    `job.json` に書く。
+    """
+
+    def __init__(self, root: Path, sources: SourceStore) -> None:
+        self._root = root
+        self._sources = sources
+        self._root.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.Lock()
+        self._jobs: dict[str, Job] = {}
+        self._queue: queue.Queue[str] = queue.Queue()
+        self._worker: threading.Thread | None = None
+        self._closing = threading.Event()
+        self._cancelling: set[str] = set()
+        self._restore()
+
+    # --- 受け付け -------------------------------------------------------
+
+    def submit(self, source: Source, request: ConvertRequest) -> Job:
+        """取り込み済みの入力を指してキューに載せる。動画はコピーしない。"""
+        job_id = uuid.uuid4().hex
+        (self._root / job_id).mkdir(parents=True)
+        job = Job(
+            id=job_id,
+            source_id=source.id,
+            source_name=source.name,
+            status="queued",
+            request=request,
+            created_at=time.time(),
+        )
+        self._write(job)
+        self._queue.put(job_id)
+        self._ensure_worker()
+        return job
+
+    def get(self, job_id: str) -> Job | None:
+        with self._lock:
+            return self._jobs.get(job_id)
+
+    def all(self) -> list[Job]:
+        with self._lock:
+            jobs = list(self._jobs.values())
+        return sorted(jobs, key=lambda job: job.created_at, reverse=True)
+
+    def result_path(self, job_id: str, filename: str) -> Path | None:
+        """成果物の実体を返す。ジョブが未完了か名前が違えば None。"""
+        job = self.get(job_id)
+        if job is None or job.status != "done" or job.output_name != filename:
+            return None
+        path = self._root / job_id / filename
+        return path if path.exists() else None
+
+    def cancel(self, job_id: str) -> bool:
+        """実行中か待機中のジョブを止める。止められなければ False。
+
+        変換中のフレームを 1 枚書き終えた時点で抜ける（進捗のコールバックで見る）。
+        **書きかけの動画は残さない。** 途中まで焼いた quilt は尺が中途半端で、
+        名前規約に一致する成果物として置くとビューアが開けてしまう。
+        """
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None or job.status not in ("queued", "running"):
+                return False
+            self._cancelling.add(job_id)
+        return True
+
+    def delete(self, job_id: str) -> bool:
+        """待機中・完了済みのジョブを消す。実行中は消さない。"""
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None or job.status == "running":
+                return False
+            del self._jobs[job_id]
+        _remove_tree(self._root / job_id)
+        return True
+
+    def close(self) -> None:
+        self._closing.set()
+        self._queue.put("")
+        worker = self._worker
+        if worker is not None:
+            worker.join(timeout=5.0)
+
+    # --- ワーカー -------------------------------------------------------
+
+    def _ensure_worker(self) -> None:
+        if self._worker is not None and self._worker.is_alive():
+            return
+        self._worker = threading.Thread(target=self._run, name="lkg-convert", daemon=True)
+        self._worker.start()
+
+    def _run(self) -> None:
+        while not self._closing.is_set():
+            job_id = self._queue.get()
+            if not job_id or self._closing.is_set():
+                return
+            job = self.get(job_id)
+            if job is None:
+                continue
+            with self._lock:
+                waiting = job_id in self._cancelling
+                self._cancelling.discard(job_id)
+            if waiting:
+                self._mutate(job_id, lambda current: replace(current, status="cancelled"))
+                continue
+            self._process(job)
+
+    def _process(self, job: Job) -> None:
+        self._mutate(
+            job.id,
+            lambda current: replace(
+                current, status="running", done_frames=0, started_at=time.time()
+            ),
+        )
+        directory = self._root / job.id
+        options: ConvertOptions | None = None
+        try:
+            source = self._sources.path(job.source_id)
+            if source is None:
+                raise ValueError("入力の動画が見つからない（消されたか、サーバーを作り直した）")
+            options = options_for(job.request, source, directory, stem=Path(job.source_name).stem)
+            convert(options, progress=lambda done, total: self._progress(job.id, done, total))
+            name = options.output.name
+            self._mutate(job.id, lambda current: replace(current, status="done", output_name=name))
+        except _Cancelled:
+            # 音声を引き継がない経路は出力へ直に書くので、書きかけが残る
+            if options is not None:
+                options.output.unlink(missing_ok=True)
+            self._mutate(job.id, lambda current: replace(current, status="cancelled"))
+        # 変換は OpenCV・ffmpeg・ディスクのどこでも失敗しうる。ワーカーは絶対に落とさない
+        except Exception as failure:
+            message = _message(failure)
+            self._mutate(job.id, lambda current: replace(current, status="failed", error=message))
+        finally:
+            with self._lock:
+                self._cancelling.discard(job.id)
+
+    def _progress(self, job_id: str, done: int, total: int) -> None:
+        with self._lock:
+            if job_id in self._cancelling:
+                raise _Cancelled
+        # 毎フレーム来るのでファイルには書かない。落ちたら失敗として復元するだけで足りる
+        self._mutate(
+            job_id,
+            lambda current: replace(current, done_frames=done, total_frames=total),
+            persist=False,
+        )
+
+    # --- 状態の保存 -----------------------------------------------------
+
+    def _mutate(self, job_id: str, change: Callable[[Job], Job], *, persist: bool = True) -> None:
+        with self._lock:
+            current = self._jobs.get(job_id)
+            if current is None:
+                return
+            updated = change(current)
+            self._jobs[job_id] = updated
+        if persist:
+            self._write(updated)
+
+    def _write(self, job: Job) -> None:
+        with self._lock:
+            self._jobs[job.id] = job
+        directory = self._root / job.id
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / STATE_FILE).write_text(json.dumps(asdict(job), ensure_ascii=False, indent=2))
+
+    def _restore(self) -> None:
+        for state in sorted(self._root.glob(f"*/{STATE_FILE}")):
+            try:
+                loaded = json.loads(state.read_text())
+                job = Job(**{**loaded, "request": ConvertRequest(**loaded["request"])})
+            # 古い形式や壊れた JSON は無視する。成果物を配れないだけで害はない
+            except ValueError, TypeError, KeyError:
+                continue
+            # 前のプロセスが落ちて取り残された状態。再開はできないので失敗として見せる。
+            # ファイルにも書き戻す（running のまま残ると、あとから見て走行中と読み違える）
+            if job.status in ("queued", "running"):
+                self._write(replace(job, status="failed", error="サーバーの再起動で中断した"))
+                continue
+            self._jobs[job.id] = job
+
+
+def options_for(
+    request: ConvertRequest,
+    source: Path,
+    output_dir: Path,
+    *,
+    stem: str,
+    start: int | None = None,
+) -> ConvertOptions:
+    """UI の設定を変換パイプラインの設定へ写す。`start` はプレビューでフレームを差し替える。"""
+    spec = request.spec()
+    return ConvertOptions(
+        source=source,
+        output=output_dir / spec.filename(stem, "mp4"),
+        spec=spec,
+        layout=request.layout,
+        fit=request.fit,
+        projection=request.projection,
+        fov=request.fov,
+        swap_eyes=request.swap_eyes,
+        start=request.start if start is None else start,
+        frames=request.frames,
+        span=request.span,
+        synthesis=SynthesisParams(convergence=request.convergence_value()),
+        auto_convergence=request.is_auto_convergence,
+        copy_audio=request.copy_audio,
+    )
+
+
+def _message(failure: Exception) -> str:
+    text = str(failure).strip()
+    return text or failure.__class__.__name__
+
+
+def _remove_tree(directory: Path) -> None:
+    if not directory.exists():
+        return
+    for path in sorted(directory.rglob("*"), reverse=True):
+        path.rmdir() if path.is_dir() else path.unlink()
+    directory.rmdir()

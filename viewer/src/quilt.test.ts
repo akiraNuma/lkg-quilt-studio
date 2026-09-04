@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { parseQuiltLayout, tileUvRect, viewCount } from './quilt'
+import {
+  layoutMismatch,
+  matchPreset,
+  parseQuiltLayout,
+} from './quilt'
 
 describe('parseQuiltLayout', () => {
   it('ファイル名の規約からレイアウトを読む', () => {
@@ -19,30 +23,65 @@ describe('parseQuiltLayout', () => {
   })
 })
 
-describe('tileUvRect', () => {
-  const layout = { columns: 5, rows: 9, aspect: 1.777 }
+describe('layoutMismatch', () => {
+  const display = { columns: 5, rows: 9, quiltAspect: 1.777 }
 
-  it('視点 0 は左下', () => {
-    expect(tileUvRect(layout, 0)).toEqual({
-      u: 0,
-      v: 0,
-      width: 1 / 5,
-      height: 1 / 9,
-    })
+  it('噛み合っていれば null', () => {
+    expect(
+      layoutMismatch({ columns: 5, rows: 9, aspect: 1.777 }, display)
+    ).toBeNull()
   })
 
-  it('最後の視点は右上', () => {
-    const rect = tileUvRect(layout, viewCount(layout) - 1)
-    expect(rect.u).toBeCloseTo(1 - 1 / 5)
-    expect(rect.v).toBeCloseTo(1 - 1 / 9)
+  it('タイル数の違いを指摘する', () => {
+    const message = layoutMismatch(
+      { columns: 8, rows: 6, aspect: 1.777 },
+      display
+    )
+    expect(message).toContain('タイル数が違う')
   })
 
-  it('列を跨ぐと 1 段上へ進む', () => {
-    expect(tileUvRect(layout, 5).v).toBeCloseTo(1 / 9)
-    expect(tileUvRect(layout, 5).u).toBe(0)
+  it('縦横比の違いを指摘する', () => {
+    const message = layoutMismatch(
+      { columns: 5, rows: 9, aspect: 0.75 },
+      display
+    )
+    expect(message).toContain('縦横比が違う')
   })
 
-  it('範囲外の視点は例外', () => {
-    expect(() => tileUvRect(layout, viewCount(layout))).toThrow()
+  it('わずかな縦横比の差は指摘しない', () => {
+    expect(
+      layoutMismatch({ columns: 5, rows: 9, aspect: 1.78 }, display)
+    ).toBeNull()
+  })
+})
+
+describe('matchPreset', () => {
+  const presets = {
+    '16': { columns: 5, rows: 9, aspect: 1.777 },
+    go: { columns: 11, rows: 6, aspect: 0.5625 },
+  }
+
+  it('接続中の機種に一致するプリセットを返す', () => {
+    expect(
+      matchPreset(
+        { columns: 11, rows: 6, quiltAspect: 0.5625 },
+        presets
+      )
+    ).toBe('go')
+  })
+
+  it('縦横比のわずかな差は同じ機種と見なす', () => {
+    expect(
+      matchPreset(
+        { columns: 5, rows: 9, quiltAspect: 1.7778 },
+        presets
+      )
+    ).toBe('16')
+  })
+
+  it('タイル数が合わなければ null', () => {
+    expect(
+      matchPreset({ columns: 8, rows: 6, quiltAspect: 0.75 }, presets)
+    ).toBeNull()
   })
 })

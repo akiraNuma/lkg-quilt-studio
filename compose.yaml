@@ -1,0 +1,43 @@
+name: lkg-quilt-studio
+
+services:
+  # 再生 Web アプリ。`docker compose up` で立ち上がる
+  viewer:
+    build: ./viewer
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./viewer:/app
+      # ホストの node_modules（別 OS 向けのバイナリ）で上書きさせない
+      - viewer-node-modules:/app/node_modules
+      # 変換結果を http で配る。Bridge の cast は blob URL を読めないので、
+      # http://localhost:5173/out/<名前>.mp4 が cast 可能な URL になる
+      - ./out:/app/public/out:ro
+    environment:
+      # バインドマウント越しに inotify が届かない環境（Windows の /mnt/c など）だけ 1 にする
+      VITE_USE_POLLING: "${VITE_USE_POLLING:-}"
+      # UI の /api は vite が API サービスへ中継する
+      VITE_API_TARGET: http://api:8000
+    depends_on:
+      - api
+
+  # 変換ジョブの API。UI から動画を投げるとここが変換する
+  api:
+    build: ./converter
+    entrypoint: ["lkg-quilt-api"]
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/work
+    environment:
+      LKG_JOBS_DIR: out/jobs
+
+  # 変換 CLI。バッチ処理なので up では起動せず、run で 1 回ずつ呼ぶ
+  converter:
+    build: ./converter
+    volumes:
+      - .:/work
+    profiles: ["cli"]
+
+volumes:
+  viewer-node-modules:

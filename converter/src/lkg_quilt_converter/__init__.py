@@ -1,2 +1,3 @@
-def main() -> None:
-    print("Hello from lkg-quilt-converter!")
+from .cli import main
+
+__all__ = ["main"]

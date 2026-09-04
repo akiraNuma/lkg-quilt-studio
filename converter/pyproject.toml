@@ -4,10 +4,17 @@ version = "0.1.0"
 description = "ステレオ動画を Looking Glass 用の quilt 動画へ変換する CLI"
 authors = [{ name = "akiraNuma" }]
 requires-python = ">=3.14"
-dependencies = []
+dependencies = [
+    "numpy>=2.5.2",
+    "opencv-contrib-python-headless>=5.0.0.93",
+    "fastapi>=0.120.4",
+    "python-multipart>=0.0.20",
+    "uvicorn>=0.38.0",
+]
 
 [project.scripts]
 lkg-quilt-converter = "lkg_quilt_converter:main"
+lkg-quilt-api = "lkg_quilt_converter.server:run"
 
 [build-system]
 requires = ["uv_build>=0.12.9,<0.13.0"]
