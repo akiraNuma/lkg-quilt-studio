@@ -330,6 +330,9 @@ converter/.venv/bin/python scripts/make-readme-media.py   # docs/media/*
 
 画面のスクリーンショットは手で撮る。スクリプトでは作らない。
 
+コメントを英語へ書き換えただけのコミットが 1 つあり、`git blame` がそれで埋まる。
+`git config blame.ignoreRevsFile .git-blame-ignore-revs` で外せる。
+
 Docker で編集しながら動かすときの注意が 2 つある。
 
 - `viewer/` のソースはマウントしているので保存すれば HMR が効く。ただし Windows で

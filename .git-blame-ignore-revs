@@ -1,0 +1,6 @@
+# Commits that only reformat or retranslate, with no behaviour change.
+# Use them with: git blame --ignore-revs-file .git-blame-ignore-revs
+# Or configure it once: git config blame.ignoreRevsFile .git-blame-ignore-revs
+
+# docs: write code comments in English
+ab51f2ed0a423176f468c2f61ab6d0afd106a5db

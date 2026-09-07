@@ -347,6 +347,9 @@ converter/.venv/bin/python scripts/make-readme-media.py   # docs/media/*
 
 The screenshot of the app is taken by hand; the script does not produce it.
 
+One commit only retranslated comments and would otherwise dominate `git blame`. Skip it with
+`git config blame.ignoreRevsFile .git-blame-ignore-revs`.
+
 When developing through Docker:
 
 - `viewer/` source is mounted, so saves trigger HMR. On Windows, files under `C:\`
