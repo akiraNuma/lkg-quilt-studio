@@ -1,11 +1,12 @@
-"""視差推定。左画像を基準にした画素単位の視差を返す。
+"""Disparity estimation. Returns per-pixel disparity relative to the left image.
 
-視差 `d` は `left[x] ≒ right[x - d]` の関係で、手前の面ほど大きい。**符号は正に限らない。**
-収束面（画面と同じ奥行きに見える面）より奥にある面は負の視差を持つ。
+Disparity `d` satisfies `left[x] ~= right[x - d]` and grows for nearer surfaces.
+**Its sign is not necessarily positive:** surfaces behind the convergence plane (the plane that
+appears at screen depth) have negative disparity.
 
-既定は重みの取得が要らない SGBM + WLS フィルタ。時間的一貫性を持つ深層モデル
-（候補は `.claude/rules/external-apis.md`）へ差し替えられるよう、
-`DisparityEstimator` の形だけを固定してある。
+The default is SGBM plus a WLS filter, which needs no model weights. Only the shape of
+`DisparityEstimator` is fixed, so a temporally consistent deep model can replace it
+(candidates are in `.claude/rules/external-apis.md`).
 """
 
 from dataclasses import dataclass
@@ -19,17 +20,17 @@ from .holes import DisparityMap, fill_horizontal
 from .video import Frame
 
 GrayFrame = NDArray[np.uint8]
-"""(高さ, 幅) のグレースケール画像。"""
+"""A grayscale image of (height, width)."""
 
 
 @dataclass(frozen=True)
 class DisparityParams:
-    """視差推定の設定。
+    """Disparity estimation settings.
 
-    探索する視差は `[min_disparity, min_disparity + max_disparity)` の範囲。
-    `min_disparity` を 0 にすると**画面より手前に飛び出す面（負の視差）が見つからず**、
-    その面の奥行きが 0 に潰れる。撮影時の収束面がどこにあるか分からないので、
-    既定では正負の両側を探す。
+    The search covers `[min_disparity, min_disparity + max_disparity)`. Setting `min_disparity`
+    to 0 **fails to find surfaces that sit in front of the screen (negative disparity)** and
+    collapses their depth to 0. Where the convergence plane sat during capture is unknown, so the
+    default searches both signs.
     """
 
     max_disparity: int = 128
@@ -42,7 +43,7 @@ class DisparityParams:
     temporal_threshold: float = 4.0
 
     def __post_init__(self) -> None:
-        # numDisparities は 16 の倍数でないと SGBM が例外を投げる
+        # SGBM raises unless numDisparities is a multiple of 16
         if self.max_disparity <= 0 or self.max_disparity % 16:
             raise ValueError(
                 f"max_disparity は 16 の倍数の正数（受け取った値: {self.max_disparity}）"
@@ -63,13 +64,16 @@ class DisparityParams:
 
 
 class DisparityEstimator(Protocol):
-    """1 フレーム分の左右画像から視差マップを返す推定器。"""
+    """An estimator returning a disparity map from one frame's left and right images."""
 
     def estimate(self, left: Frame, right: Frame) -> DisparityMap: ...
 
     def seed(self, disparity: DisparityMap) -> None:
-        """前フレームの視差を外から入れる。キャッシュから読んで estimate を飛ばしたとき、
-        時間方向の平滑化の連鎖が切れて視差が跳ねるのを防ぐ。"""
+        """Seed the previous frame's disparity from outside.
+
+        Prevents a jump when a cached frame skips `estimate` and breaks the temporal smoothing
+        chain.
+        """
         ...
 
 
@@ -80,10 +84,10 @@ def blend_temporal(
     weight: float,
     threshold: float,
 ) -> DisparityMap:
-    """前フレームの視差と混ぜてちらつきを抑える。
+    """Blend with the previous frame's disparity to suppress flicker.
 
-    単純な指数移動平均だと動く被写体が引きずられるので、前フレームとの差が
-    `threshold` 画素を超えた画素は混ぜずに今フレームの値を採る。
+    A plain exponential moving average leaves trails behind a moving subject, so pixels whose
+    difference from the previous frame exceeds `threshold` take this frame's value unblended.
     """
     if previous is None:
         return current
@@ -95,7 +99,9 @@ def blend_temporal(
 
 
 class SgbmDisparityEstimator:
-    """SGBM + WLS フィルタによる視差推定。フレーム間は `blend_temporal` で平滑化する。"""
+    """Disparity estimation with SGBM plus a WLS filter, smoothed across frames by
+    `blend_temporal`.
+    """
 
     def __init__(self, params: DisparityParams) -> None:
         self._params = params
@@ -106,7 +112,7 @@ class SgbmDisparityEstimator:
             minDisparity=_search_start(params),
             numDisparities=_search_range(params),
             blockSize=block,
-            # P1 / P2 は視差の変化への罰則。OpenCV のサンプルが使う 8/32 × チャンネル数 × 窓面積
+            # P1 / P2 penalise disparity changes. OpenCV samples use 8/32 x channels x window area
             P1=8 * block * block,
             P2=32 * block * block,
             disp12MaxDiff=1,
@@ -128,8 +134,8 @@ class SgbmDisparityEstimator:
         if left.shape != right.shape:
             raise ValueError(f"左右の形が違う: left={left.shape} right={right.shape}")
         scale = self._params.downscale
-        # 探索範囲が画像幅と同程度以上だと SGBM が内部で巨大なバッファを要求して
-        # cv2.error（Insufficient memory）になる。原因の分かる形で先に落とす
+        # When the search range approaches the image width, SGBM asks for an enormous internal
+        # buffer and fails with cv2.error (Insufficient memory). Fail earlier, with the reason
         search = _search_range(self._params)
         usable_width = max(left.shape[1] // scale, 1)
         if search >= usable_width:
@@ -145,10 +151,10 @@ class SgbmDisparityEstimator:
         raw_right = self._right_matcher.compute(small_right, small_left)
         filtered = self._filter.filter(raw_left, small_left, None, raw_right)
 
-        # SGBM / WLS は視差を 16 倍した固定小数点で返す
+        # SGBM / WLS return disparity as fixed point scaled by 16
         disparity = filtered.astype(np.float32) / 16.0
-        # SGBM は対応が取れなかった画素に (minDisparity - 1) を入れて返す。
-        # 探索範囲の下端そのものは正当な値なので、それより下だけを無効と見なす
+        # SGBM marks pixels it could not match with (minDisparity - 1). The bottom of the search
+        # range is itself a valid value, so treat only what falls below it as invalid
         valid = disparity >= float(_search_start(self._params))
         disparity, _ = fill_horizontal(disparity, valid)
 
@@ -168,10 +174,10 @@ class SgbmDisparityEstimator:
 
 
 def photometric_residual(left: Frame, right: Frame, disparity: DisparityMap) -> float:
-    """視差で右画像を左視点へ戻したときの平均絶対誤差。
+    """Mean absolute error after warping the right image back to the left viewpoint.
 
-    視差の当たり外れを 1 つの数で見るための指標。左右が逆に入っていると、
-    どの視差を選んでも画像を説明できないので大きな値になる。
+    A single number for judging whether disparity is plausible. With the eyes swapped, no
+    disparity explains the image, so the value comes out large.
     """
     height, width = disparity.shape
     columns = np.arange(width, dtype=np.float32)[None, :]
@@ -190,15 +196,15 @@ def photometric_residual(left: Frame, right: Frame, disparity: DisparityMap) -> 
 
 
 def _search_range(params: DisparityParams) -> int:
-    """縮小して推定する分だけ探索範囲も狭める。16 の倍数に丸める。
+    """Narrow the search range by the estimation downscale, rounded to a multiple of 16.
 
-    SGBM の numDisparities は 16 の倍数でないと例外になる。
+    SGBM raises unless numDisparities is a multiple of 16.
     """
     return max(16, round(params.max_disparity / params.downscale / 16.0) * 16)
 
 
 def _search_start(params: DisparityParams) -> int:
-    """縮小して推定する分だけ探索の下端も詰める。"""
+    """Shift the bottom of the search range by the estimation downscale as well."""
     return round(params.min_disparity / params.downscale)
 
 

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Big Buck Bunny（Blender Foundation / CC-BY 3.0）の上下並びステレオ版から、
-# 動作確認用に 6 秒だけ切り出して samples/ に置く。
+# Cut 6 seconds out of the top-and-bottom stereo version of Big Buck Bunny
+# (Blender Foundation / CC-BY 3.0) into samples/ for a quick check.
 #
-# 配布物は 434 MB の zip だが、格納されている mp4 は先頭に moov があり deflate は
-# 逐次展開できる。先頭 57 MB だけ取って展開すれば冒頭 90 秒ぶんが読めるので、
-# 全部落とさずに済む。
+# The download is a 434 MB zip, but the mp4 inside carries moov at the front and deflate can be
+# decompressed incrementally. Taking only the first 57 MB and expanding it yields the opening
+# 90 seconds, so the whole file need not be fetched.
 set -euo pipefail
 
 ZIP_URL=https://download.blender.org/demo/movies/BBB/bbb_sunflower_1080p_30fps_stereo_abl.mp4.zip
@@ -32,11 +32,11 @@ import sys, zlib, pathlib
 
 source, target = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
 raw = source.read_bytes()
-# ローカルファイルヘッダは 30 バイトの固定部 + ファイル名 + extra field
+# A local file header is a 30-byte fixed part plus the filename plus the extra field
 name_length = int.from_bytes(raw[26:28], "little")
 extra_length = int.from_bytes(raw[28:30], "little")
 body = raw[30 + name_length + extra_length :]
-# 途中で切れた deflate ストリームなので、末尾の Error は無視して取れた分だけ書く
+# The deflate stream is cut short, so the trailing Error is ignored and what decoded is written
 target.write_bytes(zlib.decompressobj(-zlib.MAX_WBITS).decompress(body))
 PY
 

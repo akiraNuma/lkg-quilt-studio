@@ -6,11 +6,11 @@ import {
   parseQuiltLayout,
 } from './quilt'
 
-// 文言は言語で変わる。環境の言語に依存させない
+// The wording changes with the language; do not depend on the environment locale
 beforeEach(() => setLocale('ja'))
 
 describe('parseQuiltLayout', () => {
-  it('ファイル名の規約からレイアウトを読む', () => {
+  it('reads the layout from the filename convention', () => {
     expect(parseQuiltLayout('sample_qs5x9a1.777.mp4')).toEqual({
       columns: 5,
       rows: 9,
@@ -18,11 +18,11 @@ describe('parseQuiltLayout', () => {
     })
   })
 
-  it('整数のアスペクト比も読む', () => {
+  it('reads an integer aspect ratio too', () => {
     expect(parseQuiltLayout('sample_qs8x6a1.mp4')?.aspect).toBe(1)
   })
 
-  it('規約に合わない名前は null を返す', () => {
+  it('returns null for a name outside the convention', () => {
     expect(parseQuiltLayout('sample.mp4')).toBeNull()
   })
 })
@@ -30,13 +30,13 @@ describe('parseQuiltLayout', () => {
 describe('layoutMismatch', () => {
   const display = { columns: 5, rows: 9, quiltAspect: 1.777 }
 
-  it('噛み合っていれば null', () => {
+  it('returns null when they agree', () => {
     expect(
       layoutMismatch({ columns: 5, rows: 9, aspect: 1.777 }, display)
     ).toBeNull()
   })
 
-  it('タイル数の違いを指摘する', () => {
+  it('reports a tile-count difference', () => {
     const message = layoutMismatch(
       { columns: 8, rows: 6, aspect: 1.777 },
       display
@@ -44,7 +44,7 @@ describe('layoutMismatch', () => {
     expect(message).toContain('タイル数が違う')
   })
 
-  it('縦横比の違いを指摘する', () => {
+  it('reports an aspect-ratio difference', () => {
     const message = layoutMismatch(
       { columns: 5, rows: 9, aspect: 0.75 },
       display
@@ -52,7 +52,7 @@ describe('layoutMismatch', () => {
     expect(message).toContain('縦横比が違う')
   })
 
-  it('わずかな縦横比の差は指摘しない', () => {
+  it('ignores a negligible aspect-ratio difference', () => {
     expect(
       layoutMismatch({ columns: 5, rows: 9, aspect: 1.78 }, display)
     ).toBeNull()
@@ -65,7 +65,7 @@ describe('matchPreset', () => {
     go: { columns: 11, rows: 6, aspect: 0.5625 },
   }
 
-  it('接続中の機種に一致するプリセットを返す', () => {
+  it('returns the preset matching the connected model', () => {
     expect(
       matchPreset(
         { columns: 11, rows: 6, quiltAspect: 0.5625 },
@@ -74,7 +74,7 @@ describe('matchPreset', () => {
     ).toBe('go')
   })
 
-  it('縦横比のわずかな差は同じ機種と見なす', () => {
+  it('treats a negligible aspect difference as the same model', () => {
     expect(
       matchPreset(
         { columns: 5, rows: 9, quiltAspect: 1.7778 },
@@ -83,7 +83,7 @@ describe('matchPreset', () => {
     ).toBe('16')
   })
 
-  it('タイル数が合わなければ null', () => {
+  it('returns null when the tile counts disagree', () => {
     expect(
       matchPreset({ columns: 8, rows: 6, quiltAspect: 0.75 }, presets)
     ).toBeNull()

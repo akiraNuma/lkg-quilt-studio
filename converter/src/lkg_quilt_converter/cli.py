@@ -1,4 +1,4 @@
-"""コマンドラインの入口。"""
+"""Command-line entry point."""
 
 import argparse
 import sys
@@ -29,11 +29,11 @@ def main(argv: list[str] | None = None) -> int:
         else:
             _write_png(options.output, render_single_frame(options))
             print(f"{options.output} を書き出した", file=sys.stderr)
-    # cv2.error は Exception の直下で、OSError も ValueError も継承しない
+    # cv2.error sits directly under Exception and inherits neither OSError nor ValueError
     except cv2.error as failure:
         print(f"エラー: OpenCV の処理が失敗した: {failure}", file=sys.stderr)
         return 2
-    # FileNotFoundError は OSError の派生。ディスクフルや権限なしもここで受ける
+    # FileNotFoundError derives from OSError; a full disk or missing permission lands here too
     except (ValueError, FfmpegError, OSError) as failure:
         print(f"エラー: {failure}", file=sys.stderr)
         return 2
@@ -206,6 +206,6 @@ def _spec_from_args(args: argparse.Namespace) -> QuiltSpec:
 
 
 def _write_png(path: Path, quilt: np.ndarray) -> None:
-    # cv2.imwrite は BGR 順を前提にするので、rgb24 のまま渡すと色が入れ替わる
+    # cv2.imwrite assumes BGR order, so passing rgb24 as is swaps the colours
     if not cv2.imwrite(str(path), cv2.cvtColor(quilt, cv2.COLOR_RGB2BGR)):
         raise ValueError(f"{path} に書き出せなかった")

@@ -15,16 +15,16 @@ const props = defineProps<{
   shift: number
   span: number
   calibration: Calibration | null
-  /** Looking Glass の窓の位置と大きさ。取れていなければ移せない */
+  /** The Looking Glass window's position and size; without it nothing can be moved */
   windowRect: {
     x: number
     y: number
     width: number
     height: number
   } | null
-  /** 描き直している最中か */
+  /** Whether a redraw is in flight */
   rendering: boolean
-  /** 動画と機種の食い違いなど、絵に添える注意 */
+  /** A caution shown beside the picture, such as a video / model mismatch */
   warning: string | null
   error: string | null
 }>()
@@ -37,7 +37,9 @@ const MODE_KEY: Record<ViewMode, MessageKey> = {
   quilt: 'stage.mode.quilt',
 }
 
-/** 絵の名前。**computed で組む**（`t()` の結果を持ち回すと言語を切り替えても戻らない） */
+/** The picture's caption, **built in a computed** (a stored `t()` result would not follow a
+ * language change)
+ */
 const title = computed(() => {
   const loaded = props.source
   if (loaded === null) return ''
@@ -51,10 +53,10 @@ const title = computed(() => {
 
 const stage = useTemplateRef<InstanceType<typeof QuiltStage>>('stage')
 const stageError = ref<string | null>(null)
-// 窓は利用者が直接閉じることもある。持ち主の QuiltStage の状態をそのまま見る
+// A person can close the window directly, so read the owning QuiltStage's state as is
 const movedOut = computed(() => stage.value?.poppedOut === true)
 
-// 描き直しや素材の入れ替えで直ることがある。前の失敗を残すと直った後も赤字が居座る
+// A redraw or a new source can fix it; keeping the previous failure leaves red text behind
 watch(
   () => props.source,
   () => (stageError.value = null)
@@ -138,7 +140,8 @@ function bringBack(): void {
   align-items: stretch;
   gap: 0.5rem;
   text-align: center;
-  /* 縦長のタイル（Go は 0.5625）だと絵は細い。操作と注記も絵の幅に揃える */
+  /* A portrait tile (0.5625 on the Go) makes the picture narrow. The controls and notes follow
+     the picture's width */
   max-width: min(100%, 46rem);
   margin-inline: auto;
 }

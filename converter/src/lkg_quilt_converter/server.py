@@ -1,6 +1,6 @@
-"""変換ジョブの HTTP API。ブラウザから動画を投げて、進捗を見て、成果物を取る。
+"""HTTP API for conversion jobs: upload a video from the browser, follow progress, fetch output.
 
-実処理は `jobs.JobStore` にあり、ここは HTTP との境界だけを持つ。
+The actual work lives in `jobs.JobStore`; this module holds only the HTTP boundary.
 """
 
 import os
@@ -28,7 +28,9 @@ JOBS_DIR = Path(os.environ.get("LKG_JOBS_DIR", "out/jobs"))
 SOURCES_DIR = JOBS_DIR.parent / "sources"
 UPLOAD_CHUNK = 1 << 20
 PREVIEW_QUALITY = 82
-"""quilt は細かいタイルの集まりで JPEG が効きにくい。4092² が 5 MB を超えるので落としてある。"""
+"""A quilt is a grid of small tiles, which JPEG compresses poorly. 4092 squared exceeds 5 MB,
+so the quality is lowered.
+"""
 
 _store: JobStore | None = None
 _sources: SourceStore | None = None
@@ -64,7 +66,7 @@ app = FastAPI(title="lkg-quilt-converter", lifespan=_lifespan)
 
 @app.get("/api/options")
 def read_options() -> dict[str, Any]:
-    """UI が選択肢を自前で持たないよう、変換側の対応値を返す。"""
+    """Return the converter's supported values so the UI need not carry its own list."""
     return {
         "layouts": [name for name in LAYOUTS if name != "separate"],
         "projections": list(PROJECTIONS),
@@ -91,13 +93,13 @@ def list_jobs() -> list[dict[str, Any]]:
 
 @app.get("/api/sources")
 def list_sources() -> list[dict[str, Any]]:
-    """取り込み済みの動画。数百 MB がそのまま残るので、画面から消せるようにしてある。"""
+    """Imported videos. Hundreds of megabytes stay on disk, so the screen can delete them."""
     return [_source_json(source) for source in sources().all()]
 
 
 @app.delete("/api/sources/{source_id}", status_code=204)
 def delete_source(source_id: str) -> None:
-    # 走っているジョブは変換の途中でこの動画を読む。消すと途中で失敗する
+    # A running job reads this video mid-conversion; deleting it fails the conversion
     if store().uses_source(source_id):
         raise HTTPException(status_code=409, detail="変換中の素材は消せない")
     if not sources().delete(source_id):
@@ -108,9 +110,9 @@ def delete_source(source_id: str) -> None:
 async def create_source(
     file: Annotated[UploadFile, File(description="ステレオ動画")],
 ) -> dict[str, Any]:
-    """動画を 1 回だけ上げる。プレビューと変換はこの id を指す。"""
+    """Upload a video once. Preview and conversion both refer to this id."""
     name = Path(file.filename or "input.mp4").name
-    # 数百 MB が来るので、メモリに載せずディスクへ流す
+    # Hundreds of megabytes arrive, so stream to disk instead of holding it in memory
     SOURCES_DIR.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(delete=False, dir=SOURCES_DIR, suffix=".upload") as spooled:
         staged = Path(spooled.name)
@@ -146,11 +148,11 @@ def read_preview(
     projection: str = "flat",
     fov: float = DEFAULT_FOV,
 ) -> Response:
-    """1 フレームだけ変換して quilt の JPEG を返す。
+    """Convert a single frame and return the quilt as JPEG.
 
-    変換本体と同じ `pipeline` を通すので、**プレビューと最終出力が食い違わない**。
-    使った収束面の視差は `x-convergence` ヘッダで返す。auto はフレームごとに変わるので、
-    画面で詰めた値をそのまま焼き込めるようにするため。
+    It goes through the same `pipeline` as a full conversion, so **the preview and the final
+    output cannot disagree**. The convergence disparity used comes back in the `x-convergence`
+    header: `auto` differs per frame, and this lets the value tuned on screen be baked in as is.
     """
     path = sources().path(source_id)
     source = sources().get(source_id)
@@ -171,7 +173,7 @@ def read_preview(
         quilt, used = preview_frame(options)
     except (ValueError, FfmpegError, OSError, StopIteration) as failure:
         raise HTTPException(status_code=422, detail=_preview_error(failure)) from failure
-    # cv2 は BGR 順を前提にするので、rgb24 のまま渡すと色が入れ替わる
+    # cv2 assumes BGR order, so passing rgb24 as is swaps the colours
     ok, encoded = cv2.imencode(
         ".jpg", cv2.cvtColor(quilt, cv2.COLOR_RGB2BGR), [cv2.IMWRITE_JPEG_QUALITY, PREVIEW_QUALITY]
     )
@@ -231,7 +233,7 @@ def read_job(job_id: str) -> dict[str, Any]:
 
 @app.post("/api/jobs/{job_id}/cancel", status_code=204)
 def cancel_job(job_id: str) -> None:
-    """変換を止める。書きかけの動画は残さない。"""
+    """Stop a conversion. No partial video is left behind."""
     if not store().cancel(job_id):
         raise HTTPException(status_code=409, detail="もう終わっているジョブは止められない")
 
@@ -242,11 +244,12 @@ def delete_job(job_id: str) -> None:
         raise HTTPException(status_code=409, detail="実行中か、もう無いジョブは消せない")
 
 
-# <video> と Bridge は HEAD を投げることがある。GET だけだと 405 を返してしまう
+# <video> players sometimes send HEAD. Serving only GET would answer 405
 @app.api_route("/api/jobs/{job_id}/result/{filename}", methods=["GET", "HEAD"])
 def read_result(job_id: str, filename: str) -> FileResponse:
-    """成果物を返す。ビューアと Bridge がレイアウトを読めるよう、
-    URL の末尾は quilt の名前規約のままにしてある。"""
+    """Serve the output. The end of the URL keeps the quilt naming convention so the viewer can
+    read the layout from it.
+    """
     path = store().result_path(job_id, filename)
     if path is None:
         raise HTTPException(status_code=404, detail="その成果物は無い")
@@ -254,7 +257,7 @@ def read_result(job_id: str, filename: str) -> FileResponse:
 
 
 def _request(**fields: Any) -> ConvertRequest:
-    """文字列で来た選択肢を検証して設定に写す。不正なら 422 で返す。"""
+    """Validate the string-valued options and copy them into settings, answering 422 if invalid."""
     try:
         return ConvertRequest(**fields)
     except ValueError as invalid:
@@ -268,7 +271,9 @@ def _preview_error(failure: Exception) -> str:
 
 
 def _size(path: Path | None) -> int:
-    """成果物の大きさ。**消えていても 0 で返す**（一覧の途中で消されると 500 になる）。"""
+    """The output size. **Returns 0 even when it is gone**, since a deletion mid-listing would
+    otherwise turn into a 500.
+    """
     if path is None:
         return 0
     try:
@@ -299,7 +304,7 @@ def _as_json(job: Job) -> dict[str, Any]:
         if job.status == "done" and job.output_name
         else None
     )
-    # パスの組み立ては JobStore の仕事。ここで組み直すとディレクトリ構成が二重になる
+    # Building paths is JobStore's job; rebuilding them here would duplicate the layout
     output = store().result_path(job.id, job.output_name) if job.output_name else None
     return {
         "id": job.id,
@@ -332,7 +337,7 @@ def _as_json(job: Job) -> dict[str, Any]:
 
 
 def run() -> None:
-    """`lkg-quilt-api` の入口。"""
+    """Entry point for `lkg-quilt-api`."""
     if shutil.which("ffmpeg") is None:
         raise SystemExit("ffmpeg が見つからない。変換 API は ffmpeg が無いと動かない")
     JOBS_DIR.mkdir(parents=True, exist_ok=True)

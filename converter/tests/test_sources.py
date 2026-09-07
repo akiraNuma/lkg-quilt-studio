@@ -1,4 +1,4 @@
-"""入力動画の取り込み。壊れたファイルをここで弾けるかを見る。"""
+"""Importing input videos, checking that a broken file is rejected here."""
 
 import json
 from pathlib import Path
@@ -9,11 +9,13 @@ from lkg_quilt_converter.sources import Source, SourceStore
 from lkg_quilt_converter.video import FfmpegError
 
 SAMPLE = Path(__file__).resolve().parents[2] / "samples" / "bbb_stereo_tb.mp4"
-"""上下に 2 視点が入った実物。左右の入り方の推定を実際の動画で確かめるために使う。"""
+"""Real footage with two views stacked vertically, used to check arrangement guessing on an
+actual video.
+"""
 
 
 def test_broken_upload_is_rejected_and_leaves_nothing(tmp_path: Path) -> None:
-    """壊れた動画はプレビューや変換まで持ち越さない。原因が分かりにくくなる。"""
+    """A broken video is not carried to preview or conversion, where the cause would be hidden."""
     store = SourceStore(tmp_path)
     staged = tmp_path / "staged.upload"
     staged.write_bytes(b"not a video")
@@ -128,5 +130,5 @@ def test_real_video_is_probed_on_upload(tmp_path: Path) -> None:
     assert source.frame_count > 0
     assert store.path(source.id) == tmp_path / source.id / "input.mp4"
     assert source.suggested_layout == "tb"
-    # 平面のステレオ対なので魚眼と読み違えない
+    # A planar stereo pair is not mistaken for fisheye
     assert source.suggested_projection == "flat"

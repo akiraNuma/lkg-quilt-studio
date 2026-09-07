@@ -10,9 +10,9 @@ const props = defineProps<{
   source: QuiltSource
   mode: ViewMode
   singleView: number
-  /** 収束面のずらし（視差の画素）。再生側で効かせる */
+  /** Convergence offset in disparity pixels, applied during playback */
   shift: number
-  /** 視点の広がり。ずらしを視点ごとの平行移動へ写すのに要る */
+  /** The view span, needed to map the offset onto a per-view translation */
   span: number
   calibration: Calibration | null
 }>()
@@ -96,8 +96,9 @@ function fitToStage(): void {
 }
 
 /**
- * 別窓の canvas を実画素と 1 対 1 にする。`pitch` は画面横幅あたりのレンズ本数として
- * 正規化してあるので、描画バッファが物理画素と一致していないと縞が全部ずれる。
+ * Map the separate window's canvas one-to-one to physical pixels. `pitch` is normalised as lenses
+ * across the screen width, so every stripe shifts unless the drawing buffer matches the physical
+ * pixels.
  */
 function fitToPopup(): void {
   if (popup === null || renderer === null || canvas.value === null)
@@ -105,7 +106,8 @@ function fitToPopup(): void {
   const ratio = popup.devicePixelRatio
   const width = Math.round(popup.innerWidth * ratio)
   const height = Math.round(popup.innerHeight * ratio)
-  // scoped CSS は元ドキュメントの head にしか入らないので、別窓では style を直に当てる
+  // Scoped CSS only reaches the original document's head, so style is applied inline in the
+  // separate window
   canvas.value.style.width = `${popup.innerWidth}px`
   canvas.value.style.height = `${popup.innerHeight}px`
   renderer.setSize(width, height)
@@ -124,7 +126,8 @@ function start(): void {
   const media =
     props.source.kind === 'video' ? video.value : image.value
   if (canvas.value === null || media === null) return
-  // muted は属性だけだと自動再生の判定に間に合わないことがあるので、DOM 側にも入れる
+  // The muted attribute alone can arrive too late for the autoplay decision, so set it on the
+  // DOM as well
   if (video.value !== null) {
     video.value.volume = volume.value
     video.value.muted = muted.value
@@ -143,8 +146,8 @@ function start(): void {
     )
     return
   }
-  // 別窓へ移している間に作り直したときも、描画ループは向こうの窓で回す。
-  // 元窓が隠れると rAF が止まり、Looking Glass 側が最後のフレームで固まる
+  // Even when rebuilt while moved to the separate window, the render loop runs in that window.
+  // Once the original is hidden its rAF stops and the Looking Glass freezes on the last frame
   renderer.setLoopWindow(popup ?? window)
   renderer.setCalibration(props.calibration)
   renderer.setMode(props.mode)
@@ -156,13 +159,13 @@ function start(): void {
 }
 
 /**
- * canvas を別窓へ移す。Looking Glass は OS 上の別画面なので、そこへ持っていった窓を
- * 全画面にしないとレンチキュラー表示にならない。WebGL の context を保ったまま
- * 窓を移す方法は公式ポリフィルと同じ。
+ * Move the canvas to a separate window. The Looking Glass is a separate OS display, so the window
+ * taken there must be full screen for lenticular display to work. Moving the window while keeping
+ * the WebGL context is done the same way as in the official polyfill.
  *
- * `rect` は位置の希望でしかない。ブラウザは Window Management 権限が無いと
- * ポップアップを今の画面内へ丸めるので、別画面へは手で動かしてもらう。
- * 全画面はその窓の中のユーザー操作が要るので、ダブルクリックで切り替える
+ * `rect` is only a hint: without Window Management permission the browser confines a popup to the
+ * current screen, so a person drags it onto the other display. Full screen needs a user gesture
+ * inside that window, so a double-click toggles it
  */
 function openWindow(rect: {
   x: number
@@ -193,8 +196,9 @@ function openWindow(rect: {
 }
 
 /**
- * 別窓を全画面に出し入れする。`requestFullscreen()` はその窓の中のユーザー操作を
- * 要求するので、元の窓のボタンからは呼べない。窓の中のダブルクリックで呼ぶ
+ * Toggle the separate window in and out of full screen. `requestFullscreen()` demands a user
+ * gesture inside that window, so a button in the original window cannot call it; a double-click
+ * inside the window does
  */
 function toggleFullscreen(): void {
   const opened = popup
@@ -246,8 +250,8 @@ watch(
   () => props.calibration,
   calibration => renderer?.setCalibration(calibration)
 )
-// 同じ種類のうちは要素が使い回されるので src の差し替えだけで済む。
-// 動画と静止画を行き来したときは載せる要素ごと変わるので renderer を作り直す
+// Within one kind the element is reused, so swapping src is enough. Moving between video and
+// image changes the element itself, so the renderer is rebuilt
 watch(
   () => props.source,
   (source, previous) => {
@@ -260,16 +264,17 @@ watch(
 )
 
 /**
- * 動画と静止画を行き来したときに描き直す。**canvas ごと作り直す**（テンプレートの `:key`）。
- * `dispose()` は `forceContextLoss()` を呼ぶので、同じ canvas では二度と WebGL の
- * context を取れない（症状は three.js の `Cannot read properties of null (reading 'precision')` と
- * 真っ白な絵）。プレビューから変換結果の再生へ移るときに必ず通る道。
+ * Redraw when moving between video and image, **rebuilding the canvas itself** (`:key` in the
+ * template). `dispose()` calls `forceContextLoss()`, after which the same canvas can never
+ * acquire a WebGL context again (the symptoms are three.js's
+ * `Cannot read properties of null (reading 'precision')` and a blank picture). Going from a
+ * preview to playing the converted result always takes this path.
  */
 async function restart(): Promise<void> {
   renderer?.dispose()
   renderer = null
   await nextTick()
-  // 別窓へ移している間は、作り直した canvas もそちらへ入れ直す
+  // While moved to the separate window, the rebuilt canvas is inserted there as well
   if (popup !== null && canvas.value !== null) {
     popup.document.body.append(canvas.value)
   }
@@ -294,10 +299,11 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <!-- ルートは 1 つにする。複数だと親の flex の直下に並び、
-       4092 px の動画が横へ張り出して画面が崩れる -->
-  <!-- 縦長のタイル（Go は 0.5625）だと幅いっぱいでは画面から溢れる。高さを画面に収めた上で
-       縦横比を保つため、幅の上限を高さから逆算する。再生の操作も絵の幅に揃える -->
+  <!-- Keep a single root. Several roots become direct children of the parent's flex layout, and
+       the 4092 px video stretches sideways and breaks the layout -->
+  <!-- A portrait tile (0.5625 on the Go) overflows the screen at full width. To keep the aspect
+       ratio while fitting the height, the maximum width is derived from the height. The playback
+       controls follow the picture's width -->
   <div
     class="frame"
     :style="{
@@ -355,8 +361,8 @@ onUnmounted(() => {
     </p>
     <p v-if="sizeNote" class="size-note">{{ sizeNote }}</p>
 
-    <!-- 動画も静止画もテクスチャの供給元としてだけ要る。
-         4092 px の生の絵を並べても読めないし、置き場所も無い -->
+    <!-- Both the video and the image exist only as texture sources. Showing the raw 4092 px
+         picture would be illegible and there is nowhere to put it -->
     <video
       v-if="source.kind === 'video'"
       ref="video"
@@ -412,8 +418,8 @@ onUnmounted(() => {
 }
 
 .frame {
-  /* 幅は絵の縦横比から決まる。はみ出しは許さない
-     （4092 px の動画がここに入ると画面が横へ崩れる） */
+  /* The width follows the picture's aspect ratio. Overflow is not allowed
+     (a 4092 px video here would break the layout sideways) */
   width: 100%;
   min-width: 0;
   margin-inline: auto;

@@ -5,14 +5,14 @@ import { t } from '../i18n'
 import type { ViewMode } from '../lenticular'
 
 const props = defineProps<{
-  /** 素材が無いうちは動かせない */
+  /** Not adjustable until a source exists */
   disabled: boolean
   mode: ViewMode
-  /** 表示中の quilt の視点数 - 1 */
+  /** The displayed quilt's view count minus one */
   maxView: number
   fisheye: boolean
   lastFrame: number
-  /** 自動判定された収束面。焼き込む値の内訳に使う */
+  /** The automatically chosen convergence, used to break down the baked value */
   baseConvergence: number | null
 }>()
 
@@ -26,7 +26,9 @@ const frameIndex = defineModel<number>('frameIndex', {
   required: true,
 })
 
-/** 動画に入る収束面。**内訳を出す**（値だけ見せても何の数字か分からない） */
+/** The convergence that goes into the video, **shown as a breakdown** (the number alone does
+ * not explain itself)
+ */
 const baked = computed(() => {
   const base = props.baseConvergence
   if (base === null) return null
@@ -68,8 +70,9 @@ const baked = computed(() => {
     <p class="caption">{{ t('tune.redraw') }}</p>
 
     <!--
-      上限は穴埋めの粗さで決まるので、計算では決められない。実機で詰められるよう
-      外挿 2.5 倍ぶんまで開けてある（1.0 で左右カメラの間、それ以上は外挿）
+      The ceiling is set by hole-filling quality, which no calculation decides. It is opened to
+      2.5x extrapolation so it can be tuned on hardware (1.0 spans the two cameras; beyond that
+      extrapolates)
     -->
     <ValueSlider
       v-model="span"

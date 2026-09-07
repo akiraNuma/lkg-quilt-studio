@@ -15,26 +15,28 @@ import {
 
 export type PreviewFrame = {
   blob: Blob
-  /** 素材のファイル名。**文にはしない**（言語を切り替えたら追従しなくなる） */
+  /** The source filename. **Not a sentence**, which would not follow a language change */
   name: string
   frameIndex: number
   layout: QuiltLayout
 }
 
-/** スライダーを離してから描き直すまでの待ち。掴んでいる間は描かない */
+/** How long after releasing a slider to redraw. Nothing is drawn while it is held */
 const DEBOUNCE_MS = 400
 
 /**
- * 素材と「絵を作り直す側」の設定、そして 1 枚プレビューの自動描画。
+ * The source, the settings that rebuild the picture, and automatic single-frame preview.
  *
- * 設定を変えたら押さずに描き直す。押し忘れると古い絵を見ながら詰めることになり、
- * 実機で初めてずれに気付く。1 枚 2 秒掛かるので、掴んでいる間は待って離したら 1 回だけ走る。
+ * A settings change redraws without a button. Forgetting to press one would mean tuning against
+ * a stale picture and noticing the mismatch only on hardware. A frame takes two seconds, so it
+ * waits while a slider is held and runs once on release.
  */
 export function usePreview(displayQuilt: Ref<DisplayQuilt | null>) {
   const options = ref<api.ConverterOptions | null>(null)
   const settings = ref<api.SourceSettings>({
     layout: 'sbs',
-    // 手元の実機が Go なので既定にする。Bridge に繋げば `detected` が上書きする
+    // The available hardware is a Go, so it is the default; connecting Bridge overrides it
+    // through `detected`
     display: 'go',
     projection: 'flat',
     fov: 60,
@@ -49,7 +51,7 @@ export function usePreview(displayQuilt: Ref<DisplayQuilt | null>) {
   const rendering = ref(false)
   const error = ref<string | null>(null)
   const frame = ref<PreviewFrame | null>(null)
-  /** 直近のプレビューで実際に使われた収束面（自動判定の値） */
+  /** The convergence actually used by the latest preview (the automatically chosen value) */
   const baseConvergence = ref<number | null>(null)
 
   const fisheye = computed(
@@ -59,7 +61,7 @@ export function usePreview(displayQuilt: Ref<DisplayQuilt | null>) {
     Math.max((source.value?.frameCount ?? 1) - 1, 0)
   )
 
-  /** Bridge が返した機種に一致する変換プリセット。 */
+  /** The conversion preset matching the model Bridge reported. */
   const detected = computed(() => {
     const quilt = displayQuilt.value
     const presets = options.value?.presets
@@ -67,20 +69,20 @@ export function usePreview(displayQuilt: Ref<DisplayQuilt | null>) {
     return matchPreset(quilt, presets)
   })
 
-  /** いま選んでいる機種の quilt レイアウト。画像には名前が無いので明示で渡す */
+  /** The selected model's quilt layout, passed explicitly since an image carries no name */
   const layout = computed<QuiltLayout | null>(
     () => options.value?.presets[settings.value.display] ?? null
   )
 
-  /** 機種が決まるまでは描けない。合っていない quilt は実機に出すまで気付けない */
+  /** Nothing can be drawn until a model is chosen; a mismatched quilt shows only on hardware */
   const ready = computed(
     () => source.value !== null && layout.value !== null
   )
 
-  /** これが変わったら絵は作り直さないと合わない（収束面と視点は再生側で効く）。
+  /** A change here requires rebuilding the picture (convergence and view apply at playback).
    *
-   * **素材の id も混ぜる。** 同じ設定で別の動画を選んだときに変わらないと、
-   * 前の素材の絵を「最新」として置いたまま止まる
+   * **The source id is mixed in too.** Without it, choosing a different video under identical
+   * settings would not change the key, leaving the previous source's picture as "current"
    */
   const renderKey = computed(() =>
     JSON.stringify([
@@ -91,7 +93,7 @@ export function usePreview(displayQuilt: Ref<DisplayQuilt | null>) {
     ])
   )
   const renderedKey = ref<string | null>(null)
-  /** 失敗した設定。同じ設定で無限に投げ直さないために覚える */
+  /** The settings that failed, remembered so the same ones are not resubmitted forever */
   const failedKey = ref<string | null>(null)
 
   const failed = computed(
@@ -99,7 +101,7 @@ export function usePreview(displayQuilt: Ref<DisplayQuilt | null>) {
       failedKey.value !== null && failedKey.value === renderKey.value
   )
 
-  /** いま出ている絵が設定と合っていないか。合っていれば投げない */
+  /** Whether the picture on screen disagrees with the settings; if it agrees, nothing is sent */
   const needsRender = computed(
     () =>
       ready.value &&
@@ -117,7 +119,7 @@ export function usePreview(displayQuilt: Ref<DisplayQuilt | null>) {
     }, DEBOUNCE_MS)
   }
 
-  /** 1 枚だけ描く。描いている間に設定が変われば、同じ待ち時間を置いてもう一度。 */
+  /** Draw a single frame. A settings change while drawing schedules another after the same wait. */
   async function run(): Promise<void> {
     if (rendering.value || !needsRender.value) return
     const loaded = source.value
@@ -132,8 +134,8 @@ export function usePreview(displayQuilt: Ref<DisplayQuilt | null>) {
         { ...settings.value, span: span.value, convergence: 'auto' },
         frameIndex.value
       )
-      // 返ってくるまでに素材が入れ替わっていたら捨てる。前の動画の絵を新しい設定の
-      // ものとして置くと、実機に出すまで取り違えに気付けない
+      // Discard the result if the source changed while it was in flight. Presenting the previous
+      // video's picture as the new settings' output hides the mix-up until it reaches hardware
       if (source.value !== loaded) return
       baseConvergence.value = result.convergence
       renderedKey.value = key
@@ -153,13 +155,13 @@ export function usePreview(displayQuilt: Ref<DisplayQuilt | null>) {
     }
   }
 
-  /** 失敗した設定をもう一度投げる。走っている最中なら終わり際に拾われる。 */
+  /** Resubmit the failed settings. While a run is in flight, it is picked up as that run ends. */
   function retry(): void {
     failedKey.value = null
     schedule()
   }
 
-  /** 素材を外す。消された素材を掴んだままにしない */
+  /** Drop the source, so a deleted one is not held on to */
   function clear(): void {
     source.value = null
     frame.value = null
@@ -170,18 +172,18 @@ export function usePreview(displayQuilt: Ref<DisplayQuilt | null>) {
     error.value = null
   }
 
-  /** 取り込み済みの素材へ切り替える。同じ動画を上げ直さない（数百 MB ある） */
+  /** Switch to an imported source without re-uploading the same video (hundreds of megabytes) */
   function adopt(info: api.QuiltSourceInfo): void {
     clear()
     source.value = info
-    // 左右の入り方と写り方は取り違えやすいので、当てられたら初期値にする
+    // The arrangement and projection are easy to get wrong, so a guess becomes the initial value
     if (info.suggestedLayout !== null)
       settings.value.layout = info.suggestedLayout
     if (info.suggestedProjection !== null)
       settings.value.projection = info.suggestedProjection
   }
 
-  /** 動画を上げ直す。プレビューでパラメータを変えるたびには送らない。 */
+  /** Upload a video. Not sent again for every parameter change during preview. */
   async function selectFile(file: File | null): Promise<void> {
     clear()
     if (file === null) return
@@ -195,7 +197,9 @@ export function usePreview(displayQuilt: Ref<DisplayQuilt | null>) {
     }
   }
 
-  /** 変換に渡す形。収束面は呼び出し側が決める（焼くときは絶対値で渡す） */
+  /** The shape handed to a conversion. The caller decides convergence (baking passes an
+   * absolute value)
+   */
   function renderSettings(convergence: string): api.RenderSettings {
     return { ...settings.value, span: span.value, convergence }
   }
@@ -207,8 +211,8 @@ export function usePreview(displayQuilt: Ref<DisplayQuilt | null>) {
     },
     { immediate: true }
   )
-  // 変わるたびに待ち時間を置き直す（needsRender を watch すると true のままの
-  // ドラッグ中に置き直されず、掴んでいる最中に描き始める）
+  // Restart the wait on every change (watching needsRender instead would not restart it while a
+  // drag keeps it true, and drawing would begin mid-drag)
   watch([renderKey, ready], () => {
     if (needsRender.value) schedule()
   })

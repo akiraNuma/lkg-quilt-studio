@@ -1,14 +1,14 @@
-// Looking Glass のレンチキュラー変換。画面のサブピクセルごとに「どの視点が見えるか」を
-// 求め、quilt の該当タイルから色を拾う。
+// Looking Glass lenticular conversion. For each subpixel on screen it works out which view is
+// visible there, then samples the colour from the matching quilt tile.
 //
-// 式の出典は公式ポリフィル `@lookingglass/webxr@0.6.0` の
-// `dist/bundle/webxr.js` にある `Shader()` と `LookingGlassConfig` の
-// `get pitch / tilt / subp`。キャリブレーション値の意味は公式ドキュメントに無く、
-// この実装が唯一の出典（`.claude/rules/external-apis.md`）。
+// The formulas come from `Shader()` and `LookingGlassConfig`'s `get pitch / tilt / subp` in
+// `dist/bundle/webxr.js` of the official polyfill `@lookingglass/webxr@0.6.0`. The meaning of the
+// calibration values is absent from the official documentation, and that implementation is the
+// only source (`.claude/rules/external-apis.md`).
 
 import { viewCount, type QuiltLayout } from './quilt'
 
-/** Bridge の `getDisplays()` が返すキャリブレーションのうち、変換に使う項目。 */
+/** The calibration fields this conversion needs from Bridge's `getDisplays()`. */
 export type Calibration = {
   pitch: number
   slope: number
@@ -20,7 +20,7 @@ export type Calibration = {
   invView: number
 }
 
-/** シェーダーに焼き込む形へ直したキャリブレーション。 */
+/** Calibration reshaped into the form baked into the shader. */
 export type LenticularParams = {
   pitch: number
   tilt: number
@@ -40,25 +40,25 @@ export function lenticularParams(
     )
   }
   return {
-    // 生の pitch は DPI 基準なので、画面横幅あたりのレンズ本数へ直す
+    // Raw pitch is relative to DPI, so convert it to lenses across the screen width
     pitch:
       calibration.pitch *
       (screenW / DPI) *
       Math.cos(Math.atan(1 / slope)),
     tilt: (screenH / (screenW * slope)) * flip,
     center: calibration.center,
-    // 隣のサブピクセルまでの距離。1 画素に RGB の 3 本が並ぶ
+    // Distance to the neighbouring subpixel: one pixel holds three of them (RGB)
     subp: (1 / (screenW * 3)) * flip,
     invertView: calibration.invView === 1,
   }
 }
 
 /**
- * quilt のうち実際にタイルが並んでいる割合。
+ * The fraction of the quilt actually covered by tiles.
  *
- * タイルは整数サイズの格子に並ぶので、割り切れない解像度（4096 / 5 = 819.2）では
- * 右端と上端に余白が残る。UV でその余白を除外しないと、タイルの継ぎ目がずれる。
- * 切り捨ては converter 側（`QuiltSpec.tile_size`）と揃えている。
+ * Tiles sit on an integer-sized grid, so a resolution that does not divide evenly
+ * (4096 / 5 = 819.2) leaves padding at the right and top edges. Without excluding that padding
+ * through UVs, tile seams shift. The rounding down matches the converter (`QuiltSpec.tile_size`).
  */
 export function viewPortion(
   layout: QuiltLayout,
@@ -76,7 +76,9 @@ export function viewPortion(
   }
 }
 
-/** 表示の内容。`lenticular` が実機向けで、残りは通常のモニタで中身を確かめるためのもの。 */
+/** What to display. `lenticular` targets the hardware; the rest inspect the content on an
+ * ordinary monitor.
+ */
 export type ViewMode = 'lenticular' | 'single' | 'quilt'
 
 export const VIEW_MODES: readonly ViewMode[] = [
@@ -91,7 +93,7 @@ export const VIEW_MODE_CODES: Record<ViewMode, number> = {
   quilt: 2,
 }
 
-/** GLSL のリテラルへ。整数でも小数点が付く形にしないとコンパイルが通らない。 */
+/** To a GLSL literal. Even integers need a decimal point or compilation fails. */
 function glsl(value: number): string {
   return value.toPrecision(10)
 }
@@ -101,10 +103,11 @@ export function fragmentShader(
   layout: QuiltLayout
 ): string {
   const total = viewCount(layout)
-  // 公式実装が入れている桁落ち対策。列数そのままで mod を取ると最終列が 0 に回る環境がある
+  // The precision guard the official implementation carries: taking mod with the column count
+  // as is wraps the last column to 0 on some devices
   const columns = glsl(layout.columns - 0.00001)
-  // 公式は invView を見ずに常に反転する。現行機はすべて invView=1 だが、
-  // Bridge が別の値を返す機種のために分岐を残す
+  // The official code always inverts without checking invView. Every current model reports
+  // invView=1, but the branch stays for a model where Bridge returns something else
   const fract = params.invertView
     ? '1.0 - fract(views)'
     : 'fract(views)'
@@ -128,18 +131,20 @@ const float tileCount = ${glsl(total)};
 const float columns = ${columns};
 const float rows = ${glsl(layout.rows)};
 
-// 視点 0 は quilt の左下タイル。テクスチャ座標も左下が原点なので上下の読み替えは要らない
+// View 0 is the quilt's bottom-left tile, and texture coordinates also start at the bottom
+// left, so no vertical flip is needed
 vec2 quiltUv(vec2 tileUv, float view) {
-  // 上限は tileCount - 1。公式は tileCount で切っているが、それだと格子の外を指せる
+  // The ceiling is tileCount - 1. The official code clamps at tileCount, which can point
+  // outside the grid
   float clamped = clamp(view, 0.0, tileCount - 1.0);
-  // カメラ位置。0 が左カメラ、1 が右カメラで、span で外へ広がる
-  // （converter の dibr.view_positions と同じ式）
+  // Camera position: 0 is the left camera, 1 the right, widened outwards by span
+  // (the same formula as the converter's dibr.view_positions)
   float position = 0.5 + span * (clamped / max(tileCount - 1.0, 1.0) - 0.5);
-  // 収束面を shift ずらすと、その視点の絵は shift * position だけ横へ動く
-  // （converter の dibr.view() の前進ワープがそのまま平行移動になる）。
-  // 拾う側は逆向きなので符号が反転する
+  // Moving convergence by shift moves that view's image sideways by shift * position (the
+  // forward warp in the converter's dibr.view() becomes a plain translation). Sampling runs the
+  // other way, so the sign flips
   float offset = -shift * position;
-  // タイルの外へ出ると隣の視点を掴む。端の絵が伸びるほうがまだ見られる
+  // Straying outside a tile would grab the neighbouring view; stretching the edge looks better
   float shifted = clamp(tileUv.x + offset, 0.0, 1.0);
   float column = mod(clamped, columns);
   float row = floor(clamped / columns);
@@ -147,7 +152,7 @@ vec2 quiltUv(vec2 tileUv, float view) {
   return uv * viewPortion;
 }
 
-// R / G / B は画面上で横にずれて並ぶので、チャンネルごとに別の視点が見える
+// R / G / B sit side by side on screen, so each channel sees a different view
 vec3 subpixelViews(vec2 uv) {
   vec3 views = vec3(uv.x) + subp * vec3(0.0, 1.0, 2.0);
   views += uv.y * tilt;

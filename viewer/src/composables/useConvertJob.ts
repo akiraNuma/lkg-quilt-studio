@@ -3,7 +3,7 @@ import * as api from '../api'
 
 const POLL_INTERVAL_MS = 1000
 
-/** 変換ジョブの投入と進捗の追跡。完了・失敗までポーリングする。 */
+/** Submitting a conversion job and following its progress, polling until it ends. */
 export function useConvertJob() {
   const job = ref<api.ConvertJob | null>(null)
   const error = ref<string | null>(null)
@@ -56,7 +56,7 @@ export function useConvertJob() {
       if (latest.status !== 'queued' && latest.status !== 'running')
         stopPolling()
     } catch (failure) {
-      // 一時的な失敗でポーリングを止めない。続けて拾えることが多い
+      // Do not stop polling on a transient failure; the next attempt usually succeeds
       error.value = api.describe(failure)
     }
   }

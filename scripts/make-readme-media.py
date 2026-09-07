@@ -1,15 +1,15 @@
-"""README に載せる図と GIF を作り直す。
+"""Rebuild the figures and GIF shown in the README.
 
-変換の結果そのものを載せるので、パイプラインを変えたら作り直す。
-使い方（リポジトリ直下から。素材は scripts/fetch-sample.sh で用意する）:
+They are conversion output, so rebuild them after changing the pipeline.
+Usage (from the repository root; prepare the source with scripts/fetch-sample.sh):
 
     converter/.venv/bin/python scripts/make-readme-media.py
 
-converter/.venv の Python で動かす。cv2 と numpy、それに editable install した
-lkg_quilt_converter がそこにしか入っていない。
+Run it with the Python in converter/.venv. cv2, numpy, and the editable install of
+lkg_quilt_converter exist only there.
 
-ラベルは英語で書く。README.md と README.ja.md で同じ画像を使うため、
-言語ごとに画像を分けない（cv2.putText が ASCII しか描けないという制約もある）。
+Labels are written in English so README.md and README.ja.md share one image rather than one per
+language (cv2.putText can only draw ASCII anyway).
 """
 
 import argparse
@@ -35,10 +35,10 @@ CARD = (255, 255, 255)
 INK = (47, 41, 36)  # BGR。GitHub の本文色 #24292f に合わせる
 LABEL = cv2.FONT_HERSHEY_DUPLEX
 PANEL = 300
-"""図の各パネルの画像部分の高さ（画素）。段の高さを揃えて横に並べる。"""
+"""Height in pixels of each panel's image area, so the row lines up side by side."""
 
 BAR = 24
-"""ラベルの帯の高さ。パネルの画像部分はこの下にそろえて置く。"""
+"""Height of the label bar. A panel's image area sits below it."""
 
 
 def main() -> int:
@@ -55,8 +55,8 @@ def main() -> int:
 
     options = ConvertOptions(
         source=args.source,
-        # 1 フレームだけ描くので出力先は使わない。ConvertOptions が必須にしているだけ。
-        # 追跡対象のディレクトリを指さないよう、出力先の下には置かない
+        # Only one frame is drawn, so the output path is unused; ConvertOptions merely requires
+        # it. Keep it out of the output directory so it never points inside tracked files
         output=Path("unused.mp4"),
         spec=PRESETS[DISPLAY],
         layout=LAYOUT,
@@ -72,9 +72,10 @@ def main() -> int:
 
 
 def eye_frames(source: Path, index: int) -> tuple[Frame, Frame]:
-    """タイルへ収めたあとの左眼・右眼を返す。視差推定が見ているのと同じ絵。
+    """Return the left and right eye after fitting to the tile, exactly what the estimator sees.
 
-    収め方は pipeline の `_FlatFraming` と同じ引数で決める。あちらを変えたらここも変える。
+    The fit is decided with the same arguments as the pipeline's `_FlatFraming`. Change this when
+    that changes.
     """
     info = probe(source)
     reader = read_frames(info, start=index, count=1)
@@ -96,10 +97,10 @@ def eye_frames(source: Path, index: int) -> tuple[Frame, Frame]:
 
 
 def write_wiggle(quilt: Frame, path: Path, *, width: int = 300, samples: int = 11) -> None:
-    """quilt の視点を順に切り替えた GIF。実機の見え方に一番近い静止画の代わり。
+    """A GIF cycling through the quilt's views, the closest still substitute for the hardware.
 
-    66 視点を 1 枚ずつ入れると GIF が 3 MB を超える。芝生のような高周波の絵は
-    GIF の圧縮が効かないので、両端を含む 11 視点に間引いて 20 コマにする。
+    All 66 views one by one push the GIF past 3 MB, and GIF compresses a high-frequency picture
+    such as grass poorly, so it is thinned to 11 views including both ends, giving 20 frames.
     """
     spec = PRESETS[DISPLAY]
     tile_width, tile_height = spec.tile_size
@@ -153,10 +154,10 @@ def write_wiggle(quilt: Frame, path: Path, *, width: int = 300, samples: int = 1
 
 
 def sweep_views(count: int, samples: int) -> list[int]:
-    """視点を等間隔に間引いて、端で折り返す並びを返す。
+    """Return evenly thinned view indices that turn around at the ends.
 
-    両端（視点 0 と最後の視点）を必ず含める。外挿した端の視点は穴埋めの粗さが出るところなので、
-    そこを見せない GIF は実機の見え方を実物より良く見せてしまう。
+    Both extremes (view 0 and the last view) are always included. The extrapolated edge views are
+    where hole filling looks rough, so a GIF that hides them would flatter the hardware.
     """
     if count < 2 or not 2 <= samples <= count:
         raise ValueError(f"視点の間引きが不正（count={count} samples={samples}）")
@@ -165,9 +166,9 @@ def sweep_views(count: int, samples: int) -> list[int]:
 
 
 def write_pipeline(left: Frame, right: Frame, quilt: Frame, path: Path) -> None:
-    """入力ステレオ → 視差 → quilt を横一列に並べた図。パネルの高さを揃える。
+    """A figure placing stereo input, disparity, and the quilt in one row of equal-height panels.
 
-    視差は色を入れ替える前の絵から求める。推定器は rgb24 を前提にしている。
+    Disparity is computed before the colour order is swapped: the estimator expects rgb24.
     """
     spec = PRESETS[DISPLAY]
     depth = colorize(disparity(left, right))
@@ -192,11 +193,14 @@ def disparity(left: Frame, right: Frame) -> np.ndarray:
 
 
 def colorize(values: np.ndarray) -> np.ndarray:
-    """視差を色に置き換える。外れ値で全体が潰れないよう 5〜95 パーセンタイルで伸ばす。"""
+    """Map disparity to colour.
+
+    Stretched over the 5th-95th percentile so outliers do not flatten it.
+    """
     low, high = np.percentile(values, (5, 95))
     span = max(high - low, 1e-6)
     normalized = np.clip((values - low) / span, 0.0, 1.0)
-    # cv2 の型定義は戻り値を Any にするので、分かっている型へ読み替える
+    # cv2's type stubs return Any, so re-read it as the type we know it is
     return cast(
         np.ndarray, cv2.applyColorMap((normalized * 255).astype(np.uint8), cv2.COLORMAP_TURBO)
     )
@@ -208,7 +212,7 @@ def scaled(image: np.ndarray, height: int) -> np.ndarray:
 
 
 def labelled(image: np.ndarray, text: str) -> np.ndarray:
-    """画像の上にラベルの帯を足す。"""
+    """Add a label bar above the image."""
     height, width = image.shape[:2]
     card = np.full((height + BAR, width, 3), CARD, dtype=np.uint8)
     card[BAR:] = image
@@ -228,7 +232,9 @@ def beside(images: list[np.ndarray], *, gap: int) -> np.ndarray:
 
 
 def row(panels: list[np.ndarray], *, captions: list[str], gap: int = 92) -> np.ndarray:
-    """パネルを横に並べ、間に矢印と処理名を描く。矢印は画像部分の中心に合わせる。"""
+    """Place panels in a row with an arrow and a step name between them, the arrow centred on
+    the image area.
+    """
     margin = 14
     height = max(panel.shape[0] for panel in panels) + margin * 2
     width = sum(panel.shape[1] for panel in panels) + gap * (len(panels) - 1) + margin * 2
@@ -265,12 +271,13 @@ def row(panels: list[np.ndarray], *, captions: list[str], gap: int = 92) -> np.n
 
 
 def to_bgr(frame: Frame) -> np.ndarray:
-    """パイプラインは rgb24 を扱うが cv2 の書き出しは BGR 順を前提にする。"""
+    """The pipeline works in rgb24, but cv2 writes assuming BGR order."""
     return cast(np.ndarray, cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
 
 
 def save(path: Path, image: np.ndarray, *params: int) -> None:
-    # cv2.imwrite は失敗しても例外を投げず False を返す。黙って進むと ffmpeg 側で分かりにくく落ちる
+    # cv2.imwrite returns False instead of raising, and moving on silently fails obscurely in
+    # ffmpeg
     if not cv2.imwrite(str(path), image, list(params)):
         raise ValueError(f"{path} に書き出せなかった")
 

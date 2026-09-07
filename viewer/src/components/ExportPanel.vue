@@ -10,7 +10,7 @@ import { t } from '../i18n'
 
 const props = defineProps<{
   source: QuiltSourceInfo | null
-  /** 素材と機種が決まっているか。決まるまで焼かせない */
+  /** Whether a source and a model are chosen; baking waits until they are */
   ready: boolean
   job: ConvertJob | null
   running: boolean
@@ -37,7 +37,9 @@ const start = computed(() =>
     lastFrame.value
   )
 )
-/** 変換する枚数。空なら最後まで（null）。読めない文字は invalid で弾く */
+/** How many frames to convert. Empty means to the end (null); unreadable text is rejected as
+ * invalid
+ */
 const frames = computed(() => parseCount(framesText.value))
 
 const startInvalid = computed(
@@ -58,7 +60,9 @@ const plannedFrames = computed(() => {
   return frames.value === null ? rest : Math.min(frames.value, rest)
 })
 
-/** 何を焼くのかを押す前に見せる。空欄が「最後まで」に化けるのを気付けるようにする */
+/** Show what will be baked before the button is pressed, so an empty field turning into "to the
+ * end" is noticed
+ */
 const plan = computed(() => {
   if (props.source === null || plannedFrames.value === 0) return ''
   const range = t('export.plan', {
@@ -69,10 +73,10 @@ const plan = computed(() => {
   return range
 })
 
-/** 残りの見込み。**走っているジョブの実測から出す。**
+/** The remaining estimate, **measured from the running job**.
  *
- * プレビュー 1 枚の時間から掛け算すると大きく外れる（1 枚の中に円の検出・JPEG の圧縮・
- * HTTP が入るので、実測で 2.9 秒に対して変換は 1 枚 0.52 秒だった）。
+ * Multiplying a preview frame's time is far off: a preview includes circle detection, JPEG
+ * compression, and HTTP, and measured 2.9 seconds against 0.52 seconds per converted frame.
  */
 const remaining = computed(() => {
   const current = props.job
@@ -103,7 +107,8 @@ const status = computed(() => {
   return `${progress}${remaining.value}`
 })
 
-// 素材を替えたら範囲を戻す。前の動画向けの数字が残ると、欄の表示と実際に焼く範囲がずれる
+// Reset the range when the source changes; numbers meant for the previous video would make the
+// fields disagree with what is actually baked
 watch(
   () => props.source?.id,
   () => {
@@ -123,7 +128,7 @@ function onSubmit(): void {
 function onOpen(): void {
   const url = props.job?.resultUrl
   if (!url) return
-  // Bridge は別プロセスなので、相対パスでは取りに行けない
+  // A full URL keeps working regardless of the page the link is opened from
   emit('open', new URL(url, window.location.href).toString())
 }
 </script>

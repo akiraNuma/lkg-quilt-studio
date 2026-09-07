@@ -1,4 +1,4 @@
-"""魚眼の円の検出と、透視投影への再投影。"""
+"""Fisheye circle detection and reprojection to a rectilinear image."""
 
 import math
 
@@ -21,7 +21,7 @@ def _fisheye_frame(
     center: tuple[float, float] = (120.0, 135.0),
     radius: float = 110.0,
 ) -> Frame:
-    """円の中だけに滑らかな模様が入ったコマを作る。外は真っ黒。"""
+    """Build a frame with a smooth pattern only inside the circle; outside is pure black."""
     ys, xs = np.mgrid[0:height, 0:width]
     inside = (xs - center[0]) ** 2 + (ys - center[1]) ** 2 <= radius**2
     pattern = 128 + 100 * np.sin(xs / 9.0) * np.cos(ys / 11.0)
@@ -39,7 +39,7 @@ def test_detects_the_circle_from_one_frame() -> None:
 
 
 def test_dark_frames_do_not_shrink_the_circle() -> None:
-    """暗い場面が混ざっても、複数コマの明るいほうを取るので円は縮まない。"""
+    """A dark scene in the mix does not shrink the circle, since the brighter frame wins."""
     dark = _fisheye_frame() // 40
     circle = detect_circle([dark, _fisheye_frame()])
     assert circle is not None
@@ -53,7 +53,9 @@ def test_full_frame_content_is_not_fisheye() -> None:
 
 
 def test_flat_stereo_half_is_not_fisheye() -> None:
-    """黒帯が上下にあるだけの平面素材を魚眼と読み違えない（外形が丸くない）。"""
+    """Flat footage with only letterbox bars is not mistaken for fisheye (its outline is not
+    round).
+    """
     frame = np.zeros((270, 240, 3), dtype=np.uint8)
     frame[40:230] = 180
     assert detect_circle([frame]) is None
@@ -76,12 +78,14 @@ def test_center_of_the_tile_looks_at_the_center_of_the_circle() -> None:
 
 
 def test_view_angle_maps_to_the_equidistant_radius() -> None:
-    """タイルの端が指す半径が、等距離射影の `ρ = radius * θ / 90°` に一致する。"""
+    """The radius a tile edge points at matches the equidistant projection
+    `rho = radius * theta / 90 degrees`.
+    """
     circle = FisheyeCircle(0.0, 0.0, 180.0)
     fov = 60.0
     width, height = 100, 100
     map_x, _ = rectilinear_maps(circle, tile_size=(width, height), tile_aspect=1.0, fov=fov)
-    # 右端の画素の中心は水平視野角の半分より半画素だけ内側を向く
+    # The centre of the rightmost pixel points half a pixel inside half the horizontal field
     edge = (width / 2 - 0.5) / (width / 2)
     theta = math.atan(edge * math.tan(math.radians(fov) / 2))
     expected = circle.radius * theta / (math.pi / 2)
@@ -101,5 +105,5 @@ def test_rectify_returns_the_tile_size() -> None:
     maps = rectilinear_maps(circle, tile_size=(31, 57), tile_aspect=0.5625)
     rectified = rectify(frame, maps)
     assert rectified.shape == (57, 31, 3)
-    # 中央視野だけを拾うので黒枠は入らない
+    # Only the central field is sampled, so no black border enters
     assert rectified.min() > 0

@@ -1,4 +1,4 @@
-""".claude/settings.json から Codex 用の機械設定だけを生成・照合する。"""
+"""Generate and verify only the machine-readable Codex settings from .claude/settings.json."""
 
 import argparse
 import json

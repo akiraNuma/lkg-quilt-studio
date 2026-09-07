@@ -31,7 +31,9 @@ def test_invalid_view_layout_is_rejected(count: int, span: float) -> None:
 
 
 def test_view_zero_is_the_leftmost_camera_and_lands_bottom_left() -> None:
-    """視点 0 が「最も左から見た絵」で、quilt の左下タイルに入る対応を固定する。"""
+    """Pin the mapping: view 0 is the leftmost viewpoint and lands in the quilt's bottom-left
+    tile.
+    """
     spec = PRESETS["16"]
     positions = view_positions(spec.view_count, span=2.0)
     assert positions[0] == min(positions)
@@ -42,21 +44,21 @@ def test_view_zero_is_the_leftmost_camera_and_lands_bottom_left() -> None:
 def test_forward_warp_shifts_by_the_disparity() -> None:
     disparity = np.full((1, 8), 3.0, dtype=np.float32)
     warped, valid = forward_warp(disparity, -1.0)
-    # 3 画素左へ動くので右端 3 画素は誰も落ちてこない
+    # Everything shifts 3 px left, so nothing lands in the rightmost 3 px
     assert valid[0].tolist() == [True] * 5 + [False] * 3
     assert warped[0, 0] == pytest.approx(3.0)
 
 
 def test_forward_warp_keeps_the_nearest_surface() -> None:
     disparity = np.array([[0.0, 2.0]], dtype=np.float32)
-    # どちらも列 0 に落ちる。手前（視差 2）が残る
+    # Both land on column 0; the nearer one (disparity 2) wins
     warped, valid = forward_warp(disparity, -0.5)
     assert valid[0, 0]
     assert warped[0, 0] == pytest.approx(2.0)
 
 
 def _plane(width: int, disparity: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """視差が一定の面。右画像は左画像を disparity だけずらしたもの。"""
+    """A surface at constant disparity: the right image is the left shifted by disparity."""
     ramp = (np.arange(width + disparity, dtype=np.float32) * 2.0).astype(np.uint8)
     left = np.repeat(ramp[None, :width], 4, axis=0)[..., None].repeat(3, axis=2)
     right = np.repeat(ramp[None, disparity : disparity + width], 4, axis=0)[..., None].repeat(
@@ -80,7 +82,7 @@ def test_position_one_reproduces_the_right_image() -> None:
 def test_middle_position_lands_halfway_between_the_cameras() -> None:
     left, right, disparity = _plane(32, 4)
     view = ViewSynthesizer(left, right, disparity, SynthesisParams()).view(0.5)
-    expected = left[:, 10:26].astype(int)  # 視差 4 の面を半分ずらすと 2 画素分
+    expected = left[:, 10:26].astype(int)  # Half the shift of a disparity-4 surface is 2 px
     assert np.abs(view[:, 8:24].astype(int) - expected).max() <= 2
 
 

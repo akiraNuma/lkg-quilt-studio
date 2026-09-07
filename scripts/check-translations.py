@@ -11,8 +11,9 @@ ROOT = Path(__file__).resolve().parents[1]
 REGISTRY = Path("docs/translations.json")
 
 
-# 翻訳するのは README だけ。指示文書の訳はエージェントが読まないので、訳を足しても
-# 英語を直すたびに二重更新が必要になるだけ (.claude/rules/documentation.md)。
+# Only the README is translated. Agents do not read translated instruction documents, so adding
+# one would only demand a second edit for every English change
+# (.claude/rules/documentation.md).
 def document_pairs() -> dict[str, str]:
     return {"README.md": "README.ja.md"}
 

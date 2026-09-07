@@ -15,7 +15,9 @@ def test_defaults_are_valid() -> None:
 
 
 def test_default_search_range_covers_both_signs() -> None:
-    """手前に飛び出す面は負の視差になる。下端が 0 だと見つからず奥行きが潰れる。"""
+    """A surface in front of the screen has negative disparity, which a search bottom of 0
+    misses, collapsing its depth.
+    """
     params = DisparityParams()
     assert params.min_disparity < 0
     assert params.min_disparity + params.max_disparity > 0
@@ -62,7 +64,7 @@ def test_moving_and_still_pixels_are_handled_per_pixel() -> None:
     current = np.array([[10.0, 10.0], [10.0, 10.0]], dtype=np.float32)
     previous = np.array([[12.0, 30.0], [10.0, 11.0]], dtype=np.float32)
     blended = blend_temporal(current, previous, weight=0.5, threshold=4.0)
-    # 差が閾値以内の画素だけ混ぜる。跳ねた画素（30）は今フレームの値をそのまま採る
+    # Blend only pixels within the threshold; a jumped pixel (30) keeps this frame's value
     assert blended.tolist() == [[11.0, 10.0], [10.0, 10.5]]
 
 
@@ -77,7 +79,9 @@ def test_shape_mismatch_is_rejected() -> None:
 
 
 def test_search_range_wider_than_the_tile_is_rejected() -> None:
-    """探索範囲がタイル幅以上だと SGBM が cv2.error で落ちるので、先に弾く。"""
+    """A search range at or beyond the tile width makes SGBM fail with cv2.error, so reject it
+    first.
+    """
     estimator = SgbmDisparityEstimator(DisparityParams(max_disparity=128))
     narrow = np.zeros((32, 64, 3), dtype=np.uint8)
     with pytest.raises(ValueError, match="探索範囲"):
@@ -85,9 +89,10 @@ def test_search_range_wider_than_the_tile_is_rejected() -> None:
 
 
 def _shifted_pair(disparity: int) -> tuple[np.ndarray, np.ndarray]:
-    """視差が `disparity` になる左右の画像を作る。
+    """Build a left and right image whose disparity is `disparity`.
 
-    視差の定義は `left[x] ≒ right[x - d]`。texture を切り出す位置をずらして作る。
+    Disparity is defined as `left[x] ~= right[x - d]`, produced by offsetting where the texture
+    is cropped.
     """
     height, width, margin = 96, 256, 48
     generator = np.random.default_rng(7)
@@ -103,7 +108,9 @@ def _centre_median(disparity: np.ndarray) -> float:
 
 
 def test_negative_disparity_is_recovered() -> None:
-    """画面より奥の面は負の視差になる。探索の下端を負にしないと見つからない。"""
+    """A surface behind the screen has negative disparity, found only when the search bottom is
+    negative.
+    """
     left, right = _shifted_pair(-8)
     params = DisparityParams(min_disparity=-32, max_disparity=64, temporal_weight=1.0)
     estimated = SgbmDisparityEstimator(params).estimate(left, right)
@@ -111,7 +118,9 @@ def test_negative_disparity_is_recovered() -> None:
 
 
 def test_a_zero_lower_bound_flattens_a_negative_disparity() -> None:
-    """min_disparity=0 では負の視差が探索範囲の外なので、奥行きが 0 に潰れる。"""
+    """With min_disparity=0, negative disparity falls outside the search range and depth
+    collapses to 0.
+    """
     left, right = _shifted_pair(-8)
     params = DisparityParams(min_disparity=0, max_disparity=64, temporal_weight=1.0)
     estimated = SgbmDisparityEstimator(params).estimate(left, right)

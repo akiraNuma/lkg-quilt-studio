@@ -2,10 +2,11 @@ import { computed, onMounted, ref } from 'vue'
 import * as api from '../api'
 
 /**
- * サーバーに残っている素材と成果物の一覧。
+ * The sources and outputs left on the server.
  *
- * 素材は数百 MB、quilt 動画は 1 本 40 MB を超える。放っておくと `out/` が膨らむだけで、
- * 画面からは見えないので消しようがなかった。ここで一覧にして消せるようにする。
+ * A source runs to hundreds of megabytes and a quilt video past 40 MB. Left alone they only
+ * grow `out/`, and the screen showed nothing, so there was no way to remove them. Listing them
+ * here makes that possible.
  */
 export function useLibrary() {
   const sources = ref<api.QuiltSourceInfo[]>([])
@@ -13,11 +14,11 @@ export function useLibrary() {
   const error = ref<string | null>(null)
   const loading = ref(false)
 
-  /** 書き出せた quilt 動画。再生とダウンロードができる */
+  /** A finished quilt video, which can be played and downloaded */
   const outputs = computed(() =>
     jobs.value.filter(job => job.resultUrl !== null)
   )
-  /** 失敗・中止で成果物が無いジョブ。消す以外にすることは無い */
+  /** A job with no output after failing or being cancelled; deleting is all that is left */
   const leftovers = computed(() =>
     jobs.value.filter(
       job =>
@@ -52,10 +53,11 @@ export function useLibrary() {
     return await remove(() => api.deleteJob(id))
   }
 
-  /** 消せたかを返す。**サーバーは断ることがある**（変換中の素材は 409）。
+  /** Return whether the deletion happened. **The server can refuse** (409 for a source being
+   * converted).
    *
-   * 呼び出し側は真のときだけ後始末する。断られたのに絵を捨てると、
-   * 素材は残っているのに調整していた位置だけ失う。
+   * Callers clean up only on true. Discarding the picture after a refusal would lose the tuned
+   * position while the source itself remains.
    */
   async function remove(call: () => Promise<void>): Promise<boolean> {
     let removed = false

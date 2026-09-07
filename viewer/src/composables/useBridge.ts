@@ -11,7 +11,7 @@ export type BridgeDisplay = {
   serial: string
   calibration: Calibration | null
   quilt: DisplayQuilt | null
-  /** Bridge が Looking Glass 用の窓を置いている画面座標 */
+  /** The screen coordinates where Bridge places its window for the Looking Glass */
   windowCoords: { x: number; y: number } | null
 }
 
@@ -21,8 +21,8 @@ type BridgeClient = ReturnType<
 >
 
 /**
- * Looking Glass Bridge との接続。実機のキャリブレーション値と、Bridge が
- * Looking Glass 用の窓を置いている画面座標を取るために使う。
+ * The connection to Looking Glass Bridge, used to read the hardware's calibration values and the
+ * screen coordinates where Bridge places its window for the Looking Glass.
  */
 export function useBridge() {
   const status = ref<BridgeStatus>('idle')
@@ -32,7 +32,7 @@ export function useBridge() {
   let client: BridgeClient | null = null
 
   async function load(): Promise<BridgeClient> {
-    // navigator や WebSocket を触るライブラリなので、使うときだけ読み込む
+    // The library touches navigator and WebSocket, so load it only when it is used
     bridge ??= await import('@lookingglass/bridge')
     client ??= bridge.BridgeClient.getInstance()
     return client
@@ -66,12 +66,12 @@ export function useBridge() {
   }
 
   /**
-   * 繋がっている Bridge から画面を取り直す。取得に失敗したら 1 度だけ繋ぎ直す。
+   * Re-read the displays from a connected Bridge, reconnecting once if the read fails.
    *
-   * bridge.js の `connect()` は `isConnected` が立っていると orchestration を
-   * 取り直さず、`getDisplays()` は保存済みの orchestration を送るだけ。だから
-   * Bridge 側で orchestration が無効になると（Bridge の再起動、他のクライアントの
-   * 接続）取得が失敗し続け、再検出を押しても永久に直らない
+   * bridge.js's `connect()` does not renew the orchestration while `isConnected` is set, and
+   * `getDisplays()` merely sends the stored one. So once Bridge invalidates the orchestration
+   * (a Bridge restart, another client connecting), the read keeps failing and rescanning never
+   * recovers
    */
   async function refresh(): Promise<void> {
     if (client === null) return
@@ -92,16 +92,17 @@ export function useBridge() {
   }
 
   /**
-   * 画面の一覧を取れたら true。**繋がっているのに 1 台も無い場合も true。**
-   * 通信の失敗（繋ぎ直せば直る）と、実機が無いこと（繋ぎ直しても直らない）を分ける
+   * True when the display list was read, **including when the connection works but no device is
+   * present**. This separates a failed exchange (which reconnecting fixes) from absent hardware
+   * (which it does not)
    */
   async function readDisplays(): Promise<boolean> {
     if (client === null) return false
     const found = await client.getDisplays()
     if (!found.success || found.response === null) return false
     displays.value = found.response.map((display, order) => ({
-      // 同梱の .d.ts は index / windowCoords を BridgeValue と宣言しているが、
-      // 実装（tryParseDisplay）は全フィールドを unwrap して返す。上流の型バグ
+      // The bundled .d.ts declares index / windowCoords as BridgeValue, but the implementation
+      // (tryParseDisplay) unwraps every field before returning. An upstream typing bug
       index: asNumber(display.index) ?? order,
       serial:
         display.calibration?.serial ?? t('bridge.unknownSerial'),
@@ -109,7 +110,7 @@ export function useBridge() {
       quilt: display.defaultQuilt,
       windowCoords: asPoint(display.windowCoords),
     }))
-    // 前回の失敗を残すと、繋がった後も警告が居座る
+    // Leaving the previous failure in place keeps a warning around after it connects
     message.value =
       displays.value.length === 0 ? t('bridge.notFound') : null
     return true
@@ -123,7 +124,7 @@ export function useBridge() {
     message.value = null
   }
 
-  // WebSocket を開いたままにしないよう、画面を離れるときに必ず切る
+  // Always disconnect when leaving the screen, so no WebSocket is left open
   onUnmounted(() => void disconnect())
 
   return {

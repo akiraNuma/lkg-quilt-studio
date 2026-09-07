@@ -7,7 +7,8 @@ def test_wide_gap_is_filled_with_the_background_disparity() -> None:
     values = np.array([[10.0, 0.0, 0.0, 0.0, 2.0]], dtype=np.float32)
     valid = np.array([[True, False, False, False, True]])
     filled, holes = fill_horizontal(values, valid, max_gap=2)
-    # 手前（10）ではなく奥（2）で埋める。前景の色が穴に伸びるのを防ぐため
+    # Fill from the far side (2) rather than the near side (10), so the foreground colour does
+    # not stretch into the hole
     assert filled[0].tolist() == [10.0, 2.0, 2.0, 2.0, 2.0]
     assert holes[0].tolist() == [False, True, True, True, False]
 

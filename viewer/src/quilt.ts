@@ -1,6 +1,6 @@
-// quilt のレイアウトはファイル名の規約から読む。変換側と数値を二重に持たないため。
-// 規約と並び順の出典: https://lookingglassfactory.com/tutorial/what-is-a-quilt
-//   `<stem>_qs<columns>x<rows>a<aspect>.mp4`（例: sample_qs5x9a1.777.mp4）
+// The quilt layout is read from the filename convention, so the numbers are not duplicated from
+// the converter. Convention and tile order: https://lookingglassfactory.com/tutorial/what-is-a-quilt
+//   `<stem>_qs<columns>x<rows>a<aspect>.mp4` (for example sample_qs5x9a1.777.mp4)
 
 import { t } from './i18n'
 
@@ -28,7 +28,7 @@ export function viewCount(layout: QuiltLayout): number {
   return layout.columns * layout.rows
 }
 
-/** Bridge の `getDisplays()` が返す、機種が想定する quilt の構成。 */
+/** The quilt composition a model expects, as returned by Bridge's `getDisplays()`. */
 export type DisplayQuilt = {
   columns: number
   rows: number
@@ -36,8 +36,8 @@ export type DisplayQuilt = {
 }
 
 /**
- * 動画の quilt レイアウトが接続中の機種と噛み合わない点を日本語で返す。
- * 噛み合っていれば null。列数・行数が違うと視点の振り分けがずれる
+ * Describe, in the user's language, how a video's quilt layout disagrees with the connected
+ * model. Returns null when they agree. Different columns or rows misassign the views
  */
 export type DisplayPreset = {
   columns: number
@@ -46,8 +46,8 @@ export type DisplayPreset = {
 }
 
 /**
- * 接続中の機種の quilt に一致する変換プリセットの名前を返す。無ければ null。
- * 機種の指定を間違えると変換が丸ごと無駄になるので、画面の既定値をここから決める
+ * Return the name of the conversion preset matching the connected model's quilt, or null.
+ * A wrong model wastes an entire conversion, so the screen's default comes from here
  */
 export function matchPreset(
   display: DisplayQuilt,

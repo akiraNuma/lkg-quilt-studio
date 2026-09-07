@@ -9,9 +9,9 @@ if [ ! -x "$python" ] || [ ! -x "$ruff" ] || [ ! -x "$mypy" ]; then
   printf '%s\n' 'Run uv sync in converter/ before checking the harness.' >&2
   exit 1
 fi
-# scripts/ は converter/ と viewer/ のどちらの check にも入らないので、ここで見る。
-# ruff の設定はルートの ruff.toml（converter/pyproject.toml を extend している）。
-# mypy は converter/pyproject.toml の files が src / tests なので、対象を引数で渡す
+# scripts/ falls outside both the converter and viewer checks, so it is checked here.
+# ruff reads the root ruff.toml, which extends converter/pyproject.toml.
+# mypy's files in converter/pyproject.toml are src / tests, so the target is passed as an argument
 "$ruff" format --check scripts
 "$ruff" check scripts
 "$mypy" --strict --ignore-missing-imports scripts

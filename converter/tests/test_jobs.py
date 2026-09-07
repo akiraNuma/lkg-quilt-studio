@@ -1,4 +1,4 @@
-"""ジョブの受け付けと状態遷移。変換そのものは pipeline 側のテストで見る。"""
+"""Job acceptance and state transitions. Conversion itself is covered by the pipeline tests."""
 
 import json
 import threading
@@ -15,7 +15,7 @@ from lkg_quilt_converter.pipeline import ConvertOptions
 from lkg_quilt_converter.sources import Source, SourceStore
 
 SAMPLE = Path(__file__).resolve().parents[2] / "samples" / "bbb_stereo_tb.mp4"
-"""上下に 2 視点が入った実物。中止を実際の変換の途中で試すために使う。"""
+"""Real footage with two views stacked vertically, used to cancel mid-conversion for real."""
 
 
 def _store(tmp_path: Path) -> JobStore:
@@ -23,7 +23,9 @@ def _store(tmp_path: Path) -> JobStore:
 
 
 def _broken_source(tmp_path: Path, name: str = "movie.mp4") -> Source:
-    """probe を通さずに入力を仕込む。変換側で失敗する経路を試すため。"""
+    """Plant a source without going through probe, to exercise the path that fails during
+    conversion.
+    """
     source = Source(
         id=uuid.uuid4().hex,
         name=name,
@@ -86,7 +88,7 @@ def test_submit_points_at_the_source_without_copying_it(tmp_path: Path) -> None:
     assert job.status == "queued"
     assert job.source_id == source.id
     assert job.source_name == "movie.mp4"
-    # 数百 MB を毎回コピーしないため、ジョブの下に動画は置かない
+    # Videos do not live under a job, so hundreds of megabytes are not copied each time
     assert not list((tmp_path / "jobs" / job.id).glob("input.*"))
     store.close()
 
@@ -105,7 +107,7 @@ def test_broken_input_fails_the_job_without_killing_the_worker(tmp_path: Path) -
 
 
 def test_missing_source_fails_the_job(tmp_path: Path) -> None:
-    """入力が消えていても落ちずに失敗として見せる。"""
+    """A missing source shows up as a failure instead of crashing."""
     store = _store(tmp_path)
     source = _broken_source(tmp_path)
     job = store.submit(source, ConvertRequest(frames=1))
@@ -129,7 +131,7 @@ def test_cancel_is_rejected_after_the_job_settled(tmp_path: Path) -> None:
 
 @pytest.mark.skipif(not SAMPLE.exists(), reason="サンプル動画が無い")
 def test_cancel_stops_the_conversion_and_leaves_no_output(tmp_path: Path) -> None:
-    """止めたジョブは書きかけの動画を残さない。名前規約に合う成果物は置かない。"""
+    """A cancelled job leaves no partial video, and nothing matching the naming convention."""
     sources = SourceStore(tmp_path / "sources")
     staged = tmp_path / "staged.upload"
     staged.write_bytes(SAMPLE.read_bytes())
@@ -179,10 +181,10 @@ def test_delete_removes_the_directory(tmp_path: Path) -> None:
 def test_uses_source_only_while_the_job_is_unfinished(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """変換中の素材を消すと途中で失敗する。消す前にこれで確かめる。
+    """Deleting a source mid-conversion fails it partway, so this is checked before deleting.
 
-    変換そのものは差し替える。実物を走らせると「走っている最中」を捉える窓が短く、
-    真になる側を確かめられない。
+    Conversion itself is stubbed: with the real thing, the window for catching it "in flight" is
+    too short to observe the true case.
     """
     running = threading.Event()
     finish = threading.Event()
@@ -196,8 +198,8 @@ def test_uses_source_only_while_the_job_is_unfinished(
         finish.wait(timeout=10.0)
 
     monkeypatch.setattr("lkg_quilt_converter.jobs.convert", fake_convert)
-    # 入力を先に置く。JobStore が持つ SourceStore は起動時に読むので、
-    # あとから足した入力は「見つからない」で失敗する（変換まで届かない）
+    # Plant the source first: JobStore's SourceStore reads at startup, so a source added later
+    # fails as "not found" and never reaches conversion
     source = _broken_source(tmp_path)
     store = _store(tmp_path)
     job = store.submit(source, ConvertRequest(frames=1))

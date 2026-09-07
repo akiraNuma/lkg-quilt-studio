@@ -1,7 +1,7 @@
-"""アップロードされた入力動画の置き場所。
+"""Where uploaded input videos live.
 
-プレビューと変換で同じファイルを使い回すために、ジョブとは別に持つ。
-ジョブに紐づけて置くと、パラメータを変えるたびに数百 MB を上げ直すことになる。
+Kept apart from jobs so preview and conversion reuse the same file. Tying storage to a job would
+mean re-uploading hundreds of megabytes for every parameter change.
 """
 
 import json
@@ -22,25 +22,27 @@ STATE_FILE = "source.json"
 
 @dataclass(frozen=True)
 class Source:
-    """取り込んだ入力動画 1 本。`path` はサーバー上の実体。"""
+    """One imported input video. `path` is the file on the server."""
 
     id: str
     name: str
     width: int
     height: int
     fps: float
-    """probe が返す Fraction を JSON に載せるため float に落としてある。"""
+    """The Fraction probe returns, reduced to float so it fits in JSON."""
 
     frame_count: int
     has_audio: bool
     created_at: float = 0.0
-    """取り込んだ時刻。一覧を新しい順に並べるのに使う（古い状態ファイルには無いので既定 0）。"""
+    """When it was imported, used to list newest first (absent from old state files, hence 0)."""
 
     suggested_layout: StereoLayout | None = None
-    """左右の入り方の推定。当たらないこともあるので、画面では初期値として使うだけ。"""
+    """The guessed eye arrangement. It can be wrong, so the screen only uses it as an initial
+    value.
+    """
 
     suggested_projection: Projection | None = None
-    """写り方（平面 / 魚眼）の推定。同じく初期値として使うだけ。"""
+    """The guessed projection (flat / fisheye), likewise only an initial value."""
 
     @property
     def stem(self) -> str:
@@ -48,7 +50,7 @@ class Source:
 
 
 class SourceStore:
-    """入力動画を `root/<id>/` に置き、メタデータを `source.json` に書く。"""
+    """Store input videos under `root/<id>/` and their metadata in `source.json`."""
 
     def __init__(self, root: Path) -> None:
         self._root = root
@@ -58,7 +60,7 @@ class SourceStore:
         self._restore()
 
     def add(self, name: str, staged: Path) -> Source:
-        """`staged` の動画を取り込む。`staged` は呼び出し側の一時ファイル。"""
+        """Import the video at `staged`, a temporary file owned by the caller."""
         source_id = uuid.uuid4().hex
         directory = self._root / source_id
         directory.mkdir(parents=True)
@@ -66,7 +68,7 @@ class SourceStore:
         target = directory / f"input{suffix}"
         staged.replace(target)
 
-        # 壊れた動画はここで弾く。プレビューや変換まで持ち越すと原因が分かりにくい
+        # Reject a broken video here. Carrying it to preview or conversion hides the cause
         try:
             info = probe(target)
         except ValueError, FfmpegError, OSError:
@@ -94,7 +96,7 @@ class SourceStore:
             return self._sources.get(source_id)
 
     def path(self, source_id: str) -> Path | None:
-        """取り込んだ動画の実体を返す。無ければ None。"""
+        """Return the imported video file, or None when it is gone."""
         if self.get(source_id) is None:
             return None
         for path in sorted((self._root / source_id).glob("input.*")):
@@ -102,13 +104,15 @@ class SourceStore:
         return None
 
     def all(self) -> list[Source]:
-        """新しい順に返す。画面の一覧はこの順で出す。"""
+        """Return newest first, which is the order the screen lists them in."""
         with self._lock:
             found = list(self._sources.values())
         return sorted(found, key=lambda source: source.created_at, reverse=True)
 
     def size(self, source_id: str) -> int:
-        """取り込んだ動画の大きさ（バイト）。数百 MB 残るので画面に出す。"""
+        """Total size of imported videos in bytes. Hundreds of megabytes accumulate, so the
+        screen shows it.
+        """
         path = self.path(source_id)
         if path is None:
             return 0
@@ -137,18 +141,24 @@ class SourceStore:
         for state in sorted(self._root.glob(f"*/{STATE_FILE}")):
             try:
                 source = Source(**json.loads(state.read_text()))
-            # 古い形式や壊れた JSON は無視する。その入力が使えないだけで害はない
+            # Ignore an old format or broken JSON: that source is simply unusable, which is
+            # harmless
             except ValueError, TypeError:
                 continue
             self._sources[source.id] = source
 
 
 SAMPLE_POSITIONS = (0.2, 0.5, 0.8)
-"""左右の入り方を見るコマの位置。真っ暗な冒頭や終端を避けるため中ほどから取る。"""
+"""Frame positions for reading the eye arrangement, taken from the middle to avoid dark
+openings and endings.
+"""
 
 
 def _inspect(info: VideoInfo) -> tuple[StereoLayout | None, Projection | None]:
-    """何コマか読んで左右の入り方と写り方を当てる。読めなければ諦める（画面で手で選べる）。"""
+    """Read a few frames to guess the arrangement and projection.
+
+    Gives up when they cannot be read; the screen lets a person choose instead.
+    """
     frames = []
     for position in SAMPLE_POSITIONS:
         index = int(info.frame_count * position) if info.frame_count else 0
@@ -162,8 +172,9 @@ def _inspect(info: VideoInfo) -> tuple[StereoLayout | None, Projection | None]:
     projection = guess_projection([split_stereo(frame, layout)[0] for frame in frames])
     if projection == "flat":
         return layout, projection
-    # 魚眼の円は画素の上で丸いので、潰してある入力（half 系）ではない。
-    # half のまま平面として読むと横に 2 倍伸びる（実測の VR180 素材が sbs-half と判定された）
+    # A fisheye circle is round in pixels, so the input is not one of the squeezed (half)
+    # layouts. Reading a half layout as flat stretches it 2x horizontally (measured: real VR180
+    # footage was classified as sbs-half)
     return cast(StereoLayout, layout.removesuffix("-half")), projection
 
 

@@ -13,7 +13,8 @@ class TranslationTests(unittest.TestCase):
         self.assertEqual(translations.check(ROOT), [])
 
     def test_only_the_readme_is_translated(self) -> None:
-        # 指示文書の訳は置かない（.claude/rules/documentation.md）。docs/ja が復活したら落とす
+        # No translated instruction documents (.claude/rules/documentation.md); fail if docs/ja
+        # comes back
         self.assertEqual(translations.document_pairs(), {"README.md": "README.ja.md"})
         self.assertFalse((ROOT / "docs/ja").exists())
 

@@ -1,5 +1,6 @@
-// quilt 動画を 1 枚のフルスクリーン矩形に描く。レンチキュラー変換はフラグメントシェーダー
-// （lenticular.ts）に任せ、ここは three.js のリソース管理と描画ループだけを持つ。
+// Draws the quilt video onto a single full-screen quad. The lenticular conversion lives in the
+// fragment shader (lenticular.ts); this file holds only three.js resource management and the
+// render loop.
 
 import {
   GLSL3,
@@ -25,8 +26,8 @@ import {
 import { viewCount, type QuiltLayout } from './quilt'
 import { t } from './i18n'
 
-// ShaderMaterial ではなく RawShaderMaterial を使う。前者は position / uv の宣言と
-// フラグメントの出力変数を自動で足すので、自前のシェーダーと二重定義になる
+// RawShaderMaterial rather than ShaderMaterial: the latter injects declarations for position /
+// uv and the fragment output variable, duplicating definitions in our own shader
 const VERTEX_SHADER = `in vec3 position;
 in vec2 uv;
 out vec2 vUv;
@@ -36,14 +37,14 @@ void main() {
 }
 `
 
-/** quilt を載せている要素。動画（再生）と静止画（プレビュー）の両方を受ける。 */
+/** The element carrying the quilt: either a video (playback) or an image (preview). */
 export type QuiltMedia = HTMLVideoElement | HTMLImageElement
 
 export type QuiltRendererOptions = {
   canvas: HTMLCanvasElement
   media: QuiltMedia
   layout: QuiltLayout
-  /** 描画ループやイベント経由で起きた失敗の受け口 */
+  /** Where failures raised by the render loop or events are reported */
   onError?: (message: string) => void
 }
 
@@ -63,12 +64,12 @@ export class QuiltRenderer {
   private calibration: Calibration | null = null
   private mode: ViewMode = 'quilt'
   private singleView: number
-  /** 収束面のずらし（タイルの画素）。焼き直さずに再生側で効かせる */
+  /** Convergence offset in tile pixels, applied during playback without re-rendering */
   private shiftPixels = 0
-  /** 視点の広がり。ずらし量を視点ごとの平行移動へ写すのに要る */
+  /** The view span, needed to map the offset onto a per-view translation */
   private span = 1.0
   private frame: number | null = null
-  /** 描画ループを回すウィンドウ。別窓へ移したらそちらへ差し替える */
+  /** The window driving the render loop, swapped when the canvas moves to a separate window */
   private loopWindow: Window = window
 
   constructor(options: QuiltRendererOptions) {
@@ -83,17 +84,18 @@ export class QuiltRenderer {
     if (!this.renderer.capabilities.isWebGL2) {
       throw new Error(t('stage.noWebgl'))
     }
-    // 静止画は VideoTexture にできない（毎フレーム更新を前提にしている）
+    // A still image cannot be a VideoTexture, which assumes an update every frame
     this.texture =
       options.media instanceof HTMLVideoElement
         ? new VideoTexture(options.media)
         : new Texture(options.media)
-    // 視点 0 が左下という前提はこの反転に依存する。false にすると上下が入れ替わる
+    // The assumption that view 0 is bottom-left depends on this flip; false swaps top and bottom
     this.texture.flipY = true
-    // ミップマップを作らせない。レンチキュラー表示では隣り合う画素が別のタイルを掴むので、
-    // GPU は「極端に縮小されている」と見て一番粗いミップ（1x1 = quilt 全体の平均色）を引き、
-    // 画面が単色に染まる。VideoTexture は既定でミップを作らないため動画では出ず、
-    // 静止画のプレビューだけで踏んだ（実機が rgb(80,103,49) の緑一色になった）
+    // Do not generate mipmaps. In lenticular display, adjacent pixels grab different tiles, so
+    // the GPU reads it as extreme minification, picks the coarsest mip (1x1, the quilt's average
+    // colour), and floods the screen with one colour. VideoTexture disables mipmaps by default,
+    // so videos escape it; only the still preview hit this (the hardware turned a flat
+    // rgb(80,103,49) green)
     this.texture.generateMipmaps = false
     this.texture.minFilter = LinearFilter
     this.material = this.buildMaterial()
@@ -114,21 +116,22 @@ export class QuiltRenderer {
   }
 
   /**
-   * 収束面を再生側でずらす。単位は視差の画素で、converter の `--convergence` と同じ量。
-   * 収束面の変更は視点ごとの平行移動と等価なので、変換をやり直さずに効かせられる
+   * Shift convergence during playback, in disparity pixels, the same quantity as the converter's
+   * `--convergence`. A convergence change is equivalent to a per-view translation, so it applies
+   * without redoing the conversion
    */
   setShift(pixels: number): void {
     this.shiftPixels = pixels
     this.material.uniforms.shift.value = this.shiftFraction()
   }
 
-  /** 視点の広がり。変換に渡す値と同じものを入れる。 */
+  /** The view span. Pass the same value given to the conversion. */
   setSpan(span: number): void {
     this.span = span
     this.material.uniforms.span.value = span
   }
 
-  /** 動画を差し替えたときに呼ぶ。レイアウトが変わればシェーダーを組み直す。 */
+  /** Call after swapping the video. A changed layout rebuilds the shader. */
   setLayout(layout: QuiltLayout): void {
     const changed =
       layout.columns !== this.layout.columns ||
@@ -136,11 +139,11 @@ export class QuiltRenderer {
     this.layout = layout
     this.singleView = Math.min(this.singleView, viewCount(layout) - 1)
     if (changed) this.replaceMaterial()
-    // 余白の割合はここで計算しない。この時点の videoWidth はまだ前の動画の値なので、
-    // 新しい動画の loadedmetadata を待つ
+    // The padding fraction is not computed here: videoWidth still holds the previous video's
+    // value at this point, so wait for the new video's loadedmetadata
   }
 
-  /** キャリブレーションはシェーダーに定数として焼くので、届いたら組み直す。 */
+  /** Calibration is baked into the shader as constants, so rebuild once it arrives. */
   setCalibration(calibration: Calibration | null): void {
     this.calibration = calibration
     this.replaceMaterial()
@@ -150,7 +153,7 @@ export class QuiltRenderer {
     this.renderer.setSize(width, height, false)
   }
 
-  /** 別窓へ canvas を移したら、その窓の requestAnimationFrame に載せ替える。 */
+  /** After moving the canvas to a separate window, switch to that window's requestAnimationFrame. */
   setLoopWindow(target: Window): void {
     if (target === this.loopWindow) return
     const running = this.frame !== null
@@ -184,8 +187,8 @@ export class QuiltRenderer {
     this.geometry.dispose()
     this.material.dispose()
     this.texture.dispose()
-    // forceContextLoss() を呼ぶとこの canvas では二度と context を取れない。
-    // dispose() は canvas ごと捨てるときにしか呼ばないので、ここで解放してよい
+    // Once forceContextLoss() is called, this canvas can never acquire a context again.
+    // dispose() runs only when the canvas itself is discarded, so releasing here is safe
     this.renderer.forceContextLoss()
     this.renderer.dispose()
   }
@@ -196,9 +199,9 @@ export class QuiltRenderer {
 
   private onMediaReady(): void {
     const { width, height } = this.mediaSize
-    // 読み込み前に needsUpdate を立てると three が image is incomplete で警告する
+    // Setting needsUpdate before loading makes three warn that the image is incomplete
     if (width === 0 || height === 0) return
-    // 静止画は毎フレーム更新されないので、読み込めた時点で明示的に上げる
+    // A still image is not updated every frame, so raise the flag explicitly once it loads
     if (!(this.media instanceof HTMLVideoElement)) {
       this.texture.needsUpdate = true
     }
@@ -220,7 +223,7 @@ export class QuiltRenderer {
   private refreshViewPortion(): void {
     const { width: videoWidth, height: videoHeight } = this.mediaSize
     if (videoWidth === 0 || videoHeight === 0) return
-    // イベント経由で呼ばれるので、投げても console に落ちるだけになる
+    // Called from an event, so throwing would only land in the console
     try {
       const portion = viewPortion(
         this.layout,
@@ -228,7 +231,7 @@ export class QuiltRenderer {
         videoHeight
       )
       this.portion.set(portion.u, portion.v)
-      // タイルの画素数はここで初めて分かるので、画素→比の換算をやり直す
+      // The tile's pixel size is known only now, so redo the pixel-to-ratio conversion
       this.material.uniforms.shift.value = this.shiftFraction()
     } catch (failure) {
       this.onError(
@@ -237,7 +240,7 @@ export class QuiltRenderer {
     }
   }
 
-  /** ずらし量をタイル幅に対する比へ直す。シェーダーはテクスチャ座標で動かすため。 */
+  /** Convert the offset to a fraction of tile width, since the shader moves in texture space. */
   private shiftFraction(): number {
     const tileWidth = this.mediaSize.width / this.layout.columns
     return tileWidth > 0 ? this.shiftPixels / tileWidth : 0
@@ -251,8 +254,8 @@ export class QuiltRenderer {
   }
 
   private buildMaterial(): RawShaderMaterial {
-    // キャリブレーションが無い間はレンチキュラー変換の式を作れない。single / quilt だけを
-    // 見られるように、意味のない値で組んでおく
+    // Without calibration the lenticular formula cannot be built. Build it from meaningless
+    // values so single / quilt remain viewable
     const params = lenticularParams(this.calibration ?? UNCALIBRATED)
     return new RawShaderMaterial({
       glslVersion: GLSL3,
@@ -270,13 +273,13 @@ export class QuiltRenderer {
   }
 }
 
-/** 読み込み完了を知らせるイベント名。静止画と動画で違う。 */
+/** The event name signalling load completion, which differs for images and videos. */
 const READY_EVENT = {
   video: 'loadedmetadata',
   image: 'load',
 } as const
 
-/** 実機の値ではない。Bridge に繋がるまでシェーダーを組めるようにするためだけの定数。 */
+/** Not hardware values. Constants that merely let the shader build before Bridge connects. */
 const UNCALIBRATED: Calibration = {
   pitch: 50,
   slope: -7,

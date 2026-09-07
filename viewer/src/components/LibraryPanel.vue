@@ -6,11 +6,11 @@ import { t, type MessageKey } from '../i18n'
 
 const props = defineProps<{
   sources: QuiltSourceInfo[]
-  /** 成果物のあるジョブ */
+  /** Jobs that produced output */
   outputs: ConvertJob[]
-  /** 失敗・中止で成果物が無いジョブ */
+  /** Jobs with no output after failing or being cancelled */
   leftovers: ConvertJob[]
-  /** いま調整している素材の id。消すと絵が消えるので印を付ける */
+  /** The id of the source being tuned, marked because deleting it clears the picture */
   currentSourceId: string | null
   loading: boolean
   error: string | null
@@ -34,14 +34,14 @@ const STATUS_KEY: Record<ConvertJob['status'], MessageKey> = {
   cancelled: 'job.cancelled',
 }
 
-/** 消す前に 1 回だけ聞く。id を覚えておいて、その行だけ聞き方を変える */
+/** Ask once before deleting, remembering the id so only that row changes its wording */
 const pending = ref<string | null>(null)
 const uriInput = ref('')
 
 const outputTotal = computed(() => total(props.outputs))
 const sourceTotal = computed(() => total(props.sources))
 
-/** 「大きさ / 取り込んだ時刻」。古い状態ファイルには時刻が無いので、空の欄は詰める */
+/** "size / imported at". Old state files carry no timestamp, so an empty part is dropped */
 function meta(parts: (string | number)[]): string {
   return parts.filter(part => part !== '').join(' / ')
 }
@@ -72,7 +72,7 @@ function removeJob(id: string): void {
   emit('removeJob', id)
 }
 
-// ファイル欄はブラウザの言語で文言が決まるので、自前のボタンから開く
+// The file field takes its wording from the browser's language, so open it from our own button
 const picker = useTemplateRef<HTMLInputElement>('picker')
 
 function pick(): void {
@@ -83,7 +83,7 @@ function onOpenFile(event: Event): void {
   const field = event.target as HTMLInputElement
   const file = field.files?.[0]
   if (file) emit('openFile', file)
-  // 同じファイルをもう一度選んでも change が飛ぶようにする
+  // Make change fire even when the same file is chosen again
   field.value = ''
 }
 
@@ -282,7 +282,7 @@ h3 {
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
-  /* 溜まると縦に伸び続けるので、この中だけで送る */
+  /* It grows without bound as items pile up, so scroll inside this box */
   max-height: 14rem;
   overflow-y: auto;
 }
@@ -300,7 +300,7 @@ h3 {
 .name {
   font-size: 0.875rem;
   font-weight: 500;
-  /* 長いファイル名で右の列を押し広げない */
+  /* A long filename must not push the right column wider */
   overflow-wrap: anywhere;
 }
 

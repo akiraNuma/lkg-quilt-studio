@@ -4,16 +4,16 @@ import { parseQuiltLayout, type QuiltLayout } from '../quilt'
 
 export type QuiltSource = {
   name: string
-  /** 動画か静止画か。プレビューは 1 フレームなので静止画で来る */
+  /** Video or still image. A preview is a single frame, so it arrives as an image */
   kind: 'video' | 'image'
-  /** <video> か <img> に渡す場所 */
+  /** The location handed to <video> or <img> */
   url: string
-  /** プレビュー 1 枚なら何フレーム目か。動画なら null */
+  /** Which frame a single-frame preview shows, or null for a video */
   frameIndex: number | null
   layout: QuiltLayout
 }
 
-/** quilt 動画の選択と、それに紐づく object URL の後片付けを持つ。 */
+/** Owns the selected quilt video and the cleanup of its object URL. */
 export function useQuiltSource() {
   const source = ref<QuiltSource | null>(null)
   const error = ref<string | null>(null)
@@ -68,8 +68,8 @@ export function useQuiltSource() {
   }
 
   /**
-   * 1 フレームだけ変換した quilt を開く。レイアウトはファイル名から読めないので
-   * 呼び出し側が渡す。object URL の後片付けはここが持つ
+   * Open a quilt converted from a single frame. The layout cannot be read from a filename, so
+   * the caller passes it. Cleanup of the object URL stays here
    */
   function fromImage(
     blob: Blob,

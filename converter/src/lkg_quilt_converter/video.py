@@ -1,7 +1,7 @@
-"""ffmpeg 経由の動画入出力。
+"""Video I/O through ffmpeg.
 
-OpenCV の VideoCapture ではなく ffmpeg のパイプを使う。ピクセル形式（rgb24）と
-フレーム範囲を明示でき、対応コーデックがホストの ffmpeg に揃うため。
+Uses an ffmpeg pipe rather than OpenCV's VideoCapture: it makes the pixel format (rgb24) and the
+frame range explicit, and the supported codecs match the host's ffmpeg.
 """
 
 import json
@@ -18,11 +18,11 @@ import numpy as np
 from numpy.typing import NDArray
 
 Frame = NDArray[np.uint8]
-"""(高さ, 幅, 3) の rgb24 フレーム。"""
+"""An rgb24 frame of (height, width, 3)."""
 
 
 class FfmpegError(RuntimeError):
-    """ffmpeg / ffprobe の呼び出しが失敗した。"""
+    """An ffmpeg / ffprobe invocation failed."""
 
 
 def _binary(name: str) -> str:
@@ -34,7 +34,7 @@ def _binary(name: str) -> str:
 
 @dataclass(frozen=True)
 class VideoInfo:
-    """入力動画のメタデータ。`frame_count` は不明なら 0。"""
+    """Input video metadata. `frame_count` is 0 when unknown."""
 
     path: Path
     width: int
@@ -45,7 +45,7 @@ class VideoInfo:
 
 
 def probe(path: Path) -> VideoInfo:
-    """ffprobe で解像度・フレームレート・フレーム数を読む。"""
+    """Read resolution, frame rate, and frame count with ffprobe."""
     command = [
         _binary("ffprobe"),
         "-v",
@@ -91,10 +91,10 @@ def probe(path: Path) -> VideoInfo:
 
 
 def _rotation(video: dict[str, object]) -> int:
-    """映像ストリームの回転メタデータ（度）。無ければ 0。
+    """The video stream's rotation metadata in degrees, or 0 when absent.
 
-    今の ffprobe は displaymatrix の side data に正規化するが、古いツールが書いた
-    `tags.rotate` だけのファイルもあるので両方見る。
+    Current ffprobe normalises it into displaymatrix side data, but files written by older tools
+    carry only `tags.rotate`, so both are read.
     """
     side_data = video.get("side_data_list")
     if isinstance(side_data, list):
@@ -126,7 +126,7 @@ def _frame_count(video: dict[str, object], container: dict[str, object], fps: Fr
 
 
 def read_frames(info: VideoInfo, *, start: int = 0, count: int | None = None) -> Generator[Frame]:
-    """rgb24 のフレームを順に返す。範囲はフレーム番号で指定する。"""
+    """Yield rgb24 frames in order. The range is given in frame numbers."""
     if start < 0:
         raise ValueError(f"start は 0 以上（受け取った値: {start}）")
     if count is not None and count <= 0:
@@ -137,15 +137,17 @@ def read_frames(info: VideoInfo, *, start: int = 0, count: int | None = None) ->
         "-v",
         "error",
         "-nostdin",
-        # 回転メタデータを適用させない（適用されると出力の縦横が probe の値と入れ替わる）。
-        # probe が回転付きの入力を弾くので通常は効かない。probe を通らない呼び出しへの保険
+        # Do not let rotation metadata be applied (it would swap the output's width and height
+        # against what probe reported). probe rejects rotated input, so this normally does
+        # nothing; it guards calls that bypass probe
         "-noautorotate",
     ]
     if start:
-        # -i より前の -ss は今の ffmpeg では正確で、目的のフレームまでデコードを飛ばす。
-        # trim フィルタで頭から数えると 2 万フレーム先で数十秒掛かる（実測 1.82s → 0.20s）。
-        # 半フレーム手前を狙うのは、丸めで次のフレームに乗らないようにするため。
-        # フレーム番号と時刻の対応は一定フレームレートが前提（probe の fps を信じる）
+        # -ss before -i is accurate in current ffmpeg and skips decoding up to the target frame.
+        # Counting from the start with the trim filter takes tens of seconds 20,000 frames in
+        # (measured 1.82 s -> 0.20 s). Aiming half a frame early keeps rounding from landing on
+        # the next frame. Mapping frame numbers to timestamps assumes a constant frame rate
+        # (probe's fps is trusted)
         command += ["-ss", f"{(start - 0.5) / float(info.fps):.6f}"]
     command += ["-i", str(info.path)]
     if count is not None:
@@ -154,8 +156,8 @@ def read_frames(info: VideoInfo, *, start: int = 0, count: int | None = None) ->
 
     frame_bytes = info.width * info.height * 3
     with tempfile.TemporaryFile() as errors:
-        # stderr をファイルに逃がす。パイプのままにすると、こちらが stdout を読み切る前に
-        # stderr のバッファが埋まって ffmpeg ごと止まる
+        # Send stderr to a file. Left as a pipe, its buffer fills before we finish reading
+        # stdout and ffmpeg stalls
         process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=errors)
         assert process.stdout is not None
         try:
@@ -178,11 +180,12 @@ def read_frames(info: VideoInfo, *, start: int = 0, count: int | None = None) ->
 
 
 def mux_audio(video: Path, source: Path, output: Path, *, start: float, duration: float) -> None:
-    """映像だけの mp4 に、元動画の音声を重ねて `output` に書く。
+    """Mux the source video's audio onto a video-only mp4 and write it to `output`.
 
-    尺を `-t` で明示し、足りない音声は `apad` で無音を継ぎ足す。`-shortest` に任せると、
-    音声が要求範囲より短いときに出力全体が切られ、**ストリーム 0 本の mp4 が
-    終了コード 0 で出る**（`--start` が音声の長さを越えた場合など）。
+    The duration is stated with `-t`, and short audio is padded with silence by `apad`. Left to
+    `-shortest`, audio shorter than the requested range truncates the whole output and **produces
+    an mp4 with zero streams and exit code 0** (for instance when `--start` is past the end of
+    the audio).
     """
     command = [
         _binary("ffmpeg"),
@@ -218,9 +221,10 @@ def mux_audio(video: Path, source: Path, output: Path, *, start: float, duration
 
 
 def _first_line(message: str) -> str:
-    """ffmpeg の stderr の 1 行目。後続はスレッドごとの後始末で、原因は 1 行目に出る。
+    """The first line of ffmpeg's stderr. Later lines are per-thread cleanup; the cause is first.
 
-    `[aac @ 0x880c21c00] ` のような接頭辞は毎回アドレスが変わって読みにくいので落とす。
+    Prefixes such as `[aac @ 0x880c21c00] ` carry an address that changes every run and are
+    dropped for legibility.
     """
     for line in message.splitlines():
         stripped = line.strip()
@@ -233,20 +237,21 @@ def _first_line(message: str) -> str:
 
 
 X264_PARAMS = "rc-lookahead=10:sliced-threads=1"
-"""x264 のメモリを削る設定。**quilt は 1 フレームが巨大なので既定のままでは足りない。**
+"""Settings that cut x264's memory use. **One quilt frame is huge, and the defaults do not fit.**
 
-4092² は yuv420p で 1 枚 25 MB。x264 は先読みとスレッドごとにフレームを抱えるので、
-既定では 2.66 GB 使い、コンテナのメモリ上限に当たって**カーネルに殺される**
-（実測: `OOMKilled`、82 フレーム目で毎回落ちた。stderr は空のまま死ぬので原因が出ない）。
-フレーム単位の並列をやめて（`sliced-threads`）先読みを詰めると 1.55 GB に下がる。
-1 枚 0.10 s → 0.16 s と遅くなるが、視点合成の 0.46 s に隠れて全体の時間は変わらない。
+4092 squared is 25 MB per frame in yuv420p. x264 holds frames for lookahead and per thread, so at
+the defaults it uses 2.66 GB, hits the container's memory limit, and **is killed by the kernel**
+(measured: `OOMKilled`, always at frame 82; it dies with an empty stderr, so no cause is
+reported). Dropping frame-level parallelism (`sliced-threads`) and shortening lookahead brings it
+to 1.55 GB. A frame slows from 0.10 s to 0.16 s, which hides behind view synthesis at 0.46 s and
+leaves the total unchanged.
 """
 
 
 class QuiltEncoder:
-    """quilt フレームを映像だけの mp4 に書き出す。`with` で使う。
+    """Write quilt frames to a video-only mp4. Use it as a context manager.
 
-    音声は混ぜない。混ぜるなら書き出し後に `mux_audio` で重ねる（理由はそちらの docstring）。
+    Audio is not mixed in. To add it, mux afterwards with `mux_audio` (its docstring says why).
     """
 
     def __init__(
@@ -265,7 +270,7 @@ class QuiltEncoder:
         self._path = path
         self._frame_bytes = width * height * 3
         self._frames = 0
-        # エンコーダの寿命と同じだけ開いておく必要があるので with では包めない
+        # Must stay open as long as the encoder lives, so it cannot be wrapped in `with`
         self._errors = tempfile.TemporaryFile()  # noqa: SIM115
         command = [
             _binary("ffmpeg"),
@@ -308,14 +313,14 @@ class QuiltEncoder:
     def write(self, frame: Frame) -> None:
         stdin = self._process.stdin
         assert stdin is not None
-        # tobytes() だと 4092² で 50 MB の複製が毎フレーム増える。連続配列ならそのまま渡す
+        # tobytes() would copy 50 MB per frame at 4092 squared; a contiguous array is passed as is
         data = frame if frame.flags["C_CONTIGUOUS"] else np.ascontiguousarray(frame)
         if data.nbytes != self._frame_bytes:
             raise ValueError(f"quilt の大きさが違う（{data.nbytes} / {self._frame_bytes} バイト）")
         try:
             stdin.write(data.data)
         except BrokenPipeError as broken:
-            # 一時ファイルのこともあるのでパスは出さない
+            # The path can be a temporary file, so it is not reported
             raise FfmpegError(f"quilt の書き込み中に ffmpeg が落ちた: {self._stderr()}") from broken
         self._frames += 1
 
@@ -328,12 +333,12 @@ class QuiltEncoder:
         message = self._stderr()
         self._errors.close()
         if returncode != 0:
-            # 一時ファイルのこともあるのでパスは出さない
+            # The path can be a temporary file, so it is not reported
             raise FfmpegError(f"quilt の書き出しに失敗した: {_first_line(message)}")
         if self._frames == 0:
-            # 中身の無い mp4 を成功として残さない（--start が範囲外のときに起きる）
+            # Do not leave an empty mp4 behind as a success (happens when --start is out of range)
             self._path.unlink(missing_ok=True)
-            # 一時ファイルのこともあるのでパスは出さない
+            # The path can be a temporary file, so it is not reported
             raise FfmpegError(
                 "書き出すフレームが 1 枚も無かった。"
                 "--start / --frames が入力の範囲に収まっているか確かめる"

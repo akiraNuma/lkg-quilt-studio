@@ -1,6 +1,6 @@
-"""変換ジョブの受け付けと実行。HTTP から切り離してあるので単体でテストできる。
+"""Accepting and running conversion jobs. Kept apart from HTTP so it can be tested alone.
 
-変換は CPU を使い切るので、ワーカーは 1 本だけにして順番に処理する。
+Conversion saturates the CPU, so a single worker processes jobs in order.
 """
 
 import json
@@ -27,7 +27,7 @@ STATE_FILE = "job.json"
 
 @dataclass(frozen=True)
 class ConvertRequest:
-    """UI から受け取る設定。CLI の引数のうち、画面から触る意味があるものだけ。"""
+    """Settings received from the UI: the CLI arguments worth touching from a screen."""
 
     layout: StereoLayout = "sbs"
     display: str = "16"
@@ -70,7 +70,7 @@ class ConvertRequest:
         self.convergence_value()
 
     def convergence_value(self) -> float:
-        """`auto` を 0.0 に潰して返す。auto かどうかは `is_auto_convergence` で見る。"""
+        """Collapse `auto` to 0.0. Whether it was auto is read from `is_auto_convergence`."""
         if self.convergence == "auto":
             return 0.0
         try:
@@ -90,7 +90,7 @@ class ConvertRequest:
 
 @dataclass(frozen=True)
 class Job:
-    """1 件の変換の状態。UI へはこのままの形で JSON にして返す。"""
+    """One conversion's state, returned to the UI as JSON in this shape."""
 
     id: str
     source_id: str
@@ -99,7 +99,9 @@ class Job:
     request: ConvertRequest
     created_at: float
     started_at: float | None = None
-    """変換を始めた時刻。残り時間はここからの実測で出す（プレビュー 1 枚からでは外れる）。"""
+    """When the conversion started. Remaining time is measured from here (a single preview
+    frame gives a poor estimate).
+    """
 
     done_frames: int = 0
     total_frames: int = 0
@@ -108,7 +110,7 @@ class Job:
 
     @property
     def progress(self) -> float:
-        """0.0〜1.0。総フレーム数が分かる前は 0.0 を返す。"""
+        """0.0 to 1.0. Returns 0.0 before the total frame count is known."""
         if self.status == "done":
             return 1.0
         if not self.total_frames:
@@ -117,14 +119,14 @@ class Job:
 
 
 class _Cancelled(Exception):
-    """中止の合図。進捗のコールバックから投げて変換を巻き戻す。"""
+    """The cancellation signal, raised from the progress callback to unwind a conversion."""
 
 
 class JobStore:
-    """ジョブの状態と成果物を `root` の下に置き、ワーカー 1 本で順に変換する。
+    """Keep job state and output under `root`, converting in order on a single worker.
 
-    プロセスを再起動しても済んだジョブの成果物を配れるよう、状態はジョブごとの
-    `job.json` に書く。
+    State is written to a per-job `job.json` so finished output can still be served after the
+    process restarts.
     """
 
     def __init__(self, root: Path, sources: SourceStore) -> None:
@@ -139,10 +141,10 @@ class JobStore:
         self._cancelling: set[str] = set()
         self._restore()
 
-    # --- 受け付け -------------------------------------------------------
+    # --- accepting ------------------------------------------------------
 
     def submit(self, source: Source, request: ConvertRequest) -> Job:
-        """取り込み済みの入力を指してキューに載せる。動画はコピーしない。"""
+        """Queue a job pointing at an imported source. The video is not copied."""
         job_id = uuid.uuid4().hex
         (self._root / job_id).mkdir(parents=True)
         job = Job(
@@ -168,7 +170,7 @@ class JobStore:
         return sorted(jobs, key=lambda job: job.created_at, reverse=True)
 
     def uses_source(self, source_id: str) -> bool:
-        """その入力を待機中・実行中のジョブが指しているか。消す前に確かめる。"""
+        """Whether a queued or running job points at that source. Check before deleting."""
         with self._lock:
             return any(
                 job.source_id == source_id and job.status in ("queued", "running")
@@ -176,7 +178,7 @@ class JobStore:
             )
 
     def result_path(self, job_id: str, filename: str) -> Path | None:
-        """成果物の実体を返す。ジョブが未完了か名前が違えば None。"""
+        """Return the output file, or None when the job is unfinished or the name differs."""
         job = self.get(job_id)
         if job is None or job.status != "done" or job.output_name != filename:
             return None
@@ -184,11 +186,12 @@ class JobStore:
         return path if path.exists() else None
 
     def cancel(self, job_id: str) -> bool:
-        """実行中か待機中のジョブを止める。止められなければ False。
+        """Stop a running or queued job. Returns False when it cannot be stopped.
 
-        変換中のフレームを 1 枚書き終えた時点で抜ける（進捗のコールバックで見る）。
-        **書きかけの動画は残さない。** 途中まで焼いた quilt は尺が中途半端で、
-        名前規約に一致する成果物として置くとビューアが開けてしまう。
+        A running conversion exits once it finishes writing the current frame (seen through the
+        progress callback). **No partial video is left behind:** a half-baked quilt has an
+        arbitrary duration, and leaving it under a name matching the convention would let the
+        viewer open it.
         """
         with self._lock:
             job = self._jobs.get(job_id)
@@ -198,7 +201,7 @@ class JobStore:
         return True
 
     def delete(self, job_id: str) -> bool:
-        """待機中・完了済みのジョブを消す。実行中は消さない。"""
+        """Delete a queued or finished job. A running job is not deleted."""
         with self._lock:
             job = self._jobs.get(job_id)
             if job is None or job.status == "running":
@@ -214,7 +217,7 @@ class JobStore:
         if worker is not None:
             worker.join(timeout=5.0)
 
-    # --- ワーカー -------------------------------------------------------
+    # --- worker ---------------------------------------------------------
 
     def _ensure_worker(self) -> None:
         if self._worker is not None and self._worker.is_alive():
@@ -256,11 +259,11 @@ class JobStore:
             name = options.output.name
             self._mutate(job.id, lambda current: replace(current, status="done", output_name=name))
         except _Cancelled:
-            # 音声を引き継がない経路は出力へ直に書くので、書きかけが残る
+            # The no-audio path writes straight to the output, so a partial file remains
             if options is not None:
                 options.output.unlink(missing_ok=True)
             self._mutate(job.id, lambda current: replace(current, status="cancelled"))
-        # 変換は OpenCV・ffmpeg・ディスクのどこでも失敗しうる。ワーカーは絶対に落とさない
+        # Conversion can fail in OpenCV, ffmpeg, or on disk. The worker must never die
         except Exception as failure:
             message = _message(failure)
             self._mutate(job.id, lambda current: replace(current, status="failed", error=message))
@@ -272,14 +275,15 @@ class JobStore:
         with self._lock:
             if job_id in self._cancelling:
                 raise _Cancelled
-        # 毎フレーム来るのでファイルには書かない。落ちたら失敗として復元するだけで足りる
+        # This arrives every frame, so it is not written to a file; recovering a crash as a
+        # failure is enough
         self._mutate(
             job_id,
             lambda current: replace(current, done_frames=done, total_frames=total),
             persist=False,
         )
 
-    # --- 状態の保存 -----------------------------------------------------
+    # --- persisting state -----------------------------------------------
 
     def _mutate(self, job_id: str, change: Callable[[Job], Job], *, persist: bool = True) -> None:
         with self._lock:
@@ -303,11 +307,12 @@ class JobStore:
             try:
                 loaded = json.loads(state.read_text())
                 job = Job(**{**loaded, "request": ConvertRequest(**loaded["request"])})
-            # 古い形式や壊れた JSON は無視する。成果物を配れないだけで害はない
+            # Ignore an old format or broken JSON: the output simply cannot be served, which is
+            # harmless
             except ValueError, TypeError, KeyError:
                 continue
-            # 前のプロセスが落ちて取り残された状態。再開はできないので失敗として見せる。
-            # ファイルにも書き戻す（running のまま残ると、あとから見て走行中と読み違える）
+            # State left behind by a crashed process. It cannot resume, so show it as failed and
+            # write that back to the file (left as running, a later read would call it in flight)
             if job.status in ("queued", "running"):
                 self._write(replace(job, status="failed", error="サーバーの再起動で中断した"))
                 continue
@@ -322,7 +327,7 @@ def options_for(
     stem: str,
     start: int | None = None,
 ) -> ConvertOptions:
-    """UI の設定を変換パイプラインの設定へ写す。`start` はプレビューでフレームを差し替える。"""
+    """Copy UI settings into pipeline settings. `start` swaps the frame for a preview."""
     spec = request.spec()
     return ConvertOptions(
         source=source,

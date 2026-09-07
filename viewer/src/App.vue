@@ -64,12 +64,13 @@ const library = useLibrary()
 
 const mode = ref<ViewMode>('lenticular')
 const singleView = ref(0)
-// 収束面のずらし（視差の画素）。焼き込んだ値を再生側で上書きする
+// Convergence offset in disparity pixels; playback overrides the baked-in value
 const shift = ref(0)
 
-// Bridge の index は 0 から始まらない。Looking Glass 以外のモニタが混ざっていると、
-// 一覧から外れた分だけ番号が飛ぶ（実測で Go が index 1）。選んだ番号が一覧に無いと
-// 較正値も quilt も取れないまま画面が黙るので、繋がった時点で先頭へ寄せる
+// Bridge's index does not start at 0. With non-Looking-Glass monitors in the mix, the numbers
+// skip by however many were filtered out (measured: the Go at index 1). A selection missing from
+// the list leaves the screen silent with neither calibration nor quilt, so snap to the first
+// entry once it connects
 watch(
   bridge.displays,
   found => {
@@ -102,8 +103,8 @@ const windowRect = computed(() => {
   }
 })
 
-// 描き上がった 1 枚をそのまま絵に載せる。収束面のずらしは残す
-// （描き直すたびに 0 へ戻ると詰められない）
+// Put the finished frame straight on screen, keeping the convergence offset (resetting it to 0
+// on every redraw would make tuning impossible)
 watch(frame, latest => {
   if (latest === null) return
   const first = source.value === null
@@ -116,11 +117,11 @@ watch(frame, latest => {
   if (first || singleView.value > maxView.value) centerView()
 })
 
-// 焼き上がった動画は一覧に出す。押して確かめるまで残っているか分からないのは不便
+// List a finished video: having to press something to learn whether it exists is inconvenient
 watch(
   () => convert.job.value?.status,
   status => {
-    // 失敗も一覧に出す（leftovers）。押すまで見えないと消せない
+    // List failures too (leftovers); invisible until pressed means they cannot be deleted
     if (
       status === 'done' ||
       status === 'cancelled' ||
@@ -137,8 +138,8 @@ function centerView(): void {
 function onSubmit(output: OutputSettings): void {
   const loaded = sourceInfo.value
   if (loaded === null || !ready.value) return
-  // 画面で詰めた収束面を絶対値で焼き込む。auto のままだと動画の先頭フレームで
-  // 決め直され、プレビューで見た位置とずれる
+  // Bake the convergence tuned on screen as an absolute value. Left at auto, it would be decided
+  // again on the video's first frame and differ from what the preview showed
   const base = baseConvergence.value
   const convergence =
     base === null ? 'auto' : String(base + shift.value)
@@ -148,13 +149,13 @@ function onSubmit(output: OutputSettings): void {
   })
 }
 
-/** 動画を上げたら一覧にも出す（上げ直したのに見えないと二重に上げてしまう） */
+/** List a video once uploaded (invisible after uploading invites uploading it twice) */
 async function onSelectFile(file: File | null): Promise<void> {
   await selectFile(file)
   await library.refresh()
 }
 
-/** 一覧から素材を選び直す。上げ直さないので待ち時間が無い */
+/** Pick another source from the list. Nothing is re-uploaded, so there is no wait */
 function useSource(info: QuiltSourceInfo): void {
   adopt(info)
   shift.value = 0
@@ -162,8 +163,8 @@ function useSource(info: QuiltSourceInfo): void {
 
 async function onRemoveSource(id: string): Promise<void> {
   const removed = await library.removeSource(id)
-  // 消した素材を掴んだままだと、描き直せない絵を見ながら操作することになる。
-  // 断られた（変換中）ときは絵を残す。捨てると詰めていた位置を失う
+  // Holding a deleted source would mean working against a picture that cannot be redrawn.
+  // On a refusal (mid-conversion) the picture stays; discarding it loses the tuned position
   if (removed && sourceInfo.value?.id === id) {
     clearPreview()
     clearStage()

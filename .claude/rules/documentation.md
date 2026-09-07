@@ -60,7 +60,9 @@ Do not repeat information already expressed by types, function names, or schemas
   - **Traps:** why seemingly unnecessary code is required.
 - **One line is the default.** If you need three or more, check whether you are explaining WHAT.
 - Omit line-by-line translations of code, searchable facts, change histories, and abandoned TODOs.
-- Keep code comments in Japanese.
+- **Write code comments in English.** This is a public repository meant to be read by others,
+  and instruction documents are English already. UI text in `viewer/src/i18n.ts` keeps its `ja` entries,
+  and the converter's runtime messages stay Japanese; neither is a comment.
 
 ## Harness self-improvement triggers
 

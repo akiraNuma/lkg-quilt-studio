@@ -7,14 +7,14 @@ const props = defineProps<{
   options: ConverterOptions | null
   source: QuiltSourceInfo | null
   uploading: boolean
-  /** Bridge が返した機種のプリセット名。取れていなければ null */
+  /** The preset name for the model Bridge reported, or null when unavailable */
   detected: string | null
 }>()
 
 const emit = defineEmits<{ select: [file: File | null] }>()
 
-// 設定は 1 項目ずつ受ける。まとめて 1 つのオブジェクトで受けると、深いプロパティを
-// 書き換えても update が飛ばず、v-model が名ばかりになる
+// Settings arrive one at a time. Taking them as a single object would let a deep property be
+// rewritten without emitting an update, leaving v-model in name only
 const layout = defineModel<string>('layout', { required: true })
 const display = defineModel<string>('display', { required: true })
 const projection = defineModel<string>('projection', {
@@ -25,8 +25,8 @@ const swapEyes = defineModel<boolean>('swapEyes', { required: true })
 
 const fisheye = computed(() => projection.value === 'fisheye')
 
-// ファイル欄は自前のボタンで開く。`<input type="file">` の見た目と文言は
-// ブラウザの言語で決まるので、英語表示のときに日本語が混ざる
+// The file field is opened from our own button. `<input type="file">` takes its appearance and
+// wording from the browser's language, which would mix languages on screen
 const picker = useTemplateRef<HTMLInputElement>('picker')
 const dragDepth = ref(0)
 const multipleFiles = ref(false)
@@ -64,15 +64,15 @@ function onSelectFile(event: Event): void {
     multipleFiles.value = false
     emit('select', file)
   }
-  // 同じファイルをもう一度選んでも change が飛ぶようにする
+  // Make change fire even when the same file is chosen again
   field.value = ''
 }
 
-/** 判定と食い違うときだけ言う。合っているときの相槌は読む邪魔にしかならない */
+/** Speak only on a disagreement with the detection; confirming agreement is just noise */
 const warning = computed(() => {
   const loaded = props.source
   if (loaded === null) return null
-  // 機種のプリセットが引けないと 1 枚も描けない。黙って止まると理由が分からない
+  // Without a preset for the model nothing can be drawn, and stopping silently hides the reason
   if (
     props.options !== null &&
     !props.options.displays.includes(display.value)

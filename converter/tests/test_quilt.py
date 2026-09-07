@@ -31,7 +31,7 @@ def test_last_view_is_top_right(spec: QuiltSpec) -> None:
     tile_width, _ = spec.tile_size
     x, y = spec.tile_origin(spec.view_count - 1)
     assert x == (spec.columns - 1) * tile_width
-    # 余白は上端に寄るので、最上段のタイルは y=0 ではなく余白の分だけ下がる
+    # Padding collects at the top, so the top row of tiles starts below y=0 by that amount
     assert y == spec.margin[1]
 
 
@@ -44,7 +44,7 @@ def test_views_advance_left_to_right_then_upward(spec: QuiltSpec) -> None:
 
 @pytest.mark.parametrize("name", sorted(PRESETS))
 def test_tiles_cover_every_pixel_outside_the_margin(name: str) -> None:
-    """どのタイルにも入らない列・行を作らない（黒い筋として quilt に焼き込まれる）。"""
+    """Leave no column or row outside every tile; they would bake into the quilt as black seams."""
     spec = PRESETS[name]
     tile_width, tile_height = spec.tile_size
     columns = np.zeros(spec.width, dtype=int)
@@ -56,7 +56,7 @@ def test_tiles_cover_every_pixel_outside_the_margin(name: str) -> None:
         columns[x : x + tile_width] += 1
         rows[y : y + tile_height] += 1
     margin_x, margin_y = spec.margin
-    # 余白は右端と上端に寄る。それ以外は必ず 1 枚のタイルに覆われる
+    # Padding collects at the right and top edges; everything else is covered by exactly one tile
     assert (columns[: spec.width - margin_x] > 0).all()
     assert (columns[spec.width - margin_x :] == 0).all()
     assert (rows[margin_y:] > 0).all()
@@ -80,7 +80,7 @@ def test_presets_cover_known_displays() -> None:
 
 
 def test_go_preset_matches_the_hardware() -> None:
-    """実機の Bridge が返した defaultQuilt（LKG-E / go_p）と一致させる。"""
+    """Match defaultQuilt as Bridge reported it on real hardware (LKG-E / go_p)."""
     go = PRESETS["go"]
     assert (go.columns, go.rows) == (11, 6)
     assert (go.width, go.height) == (4092, 4092)
@@ -102,7 +102,7 @@ def test_compose_places_each_view_in_its_tile() -> None:
     spec = QuiltSpec(columns=2, rows=2, width=4, height=4, aspect=1.0)
     views = [np.full((2, 2, 3), fill_value=index + 1, dtype=np.uint8) for index in range(4)]
     quilt = spec.compose(views)
-    # 視点 0 は左下、視点 3 は右上
+    # View 0 is bottom-left, view 3 is top-right
     assert quilt[2, 0, 0] == 1
     assert quilt[2, 2, 0] == 2
     assert quilt[0, 0, 0] == 3

@@ -1,4 +1,4 @@
-"""入力ステレオ動画の整形。左右の切り出しと、quilt のタイル 1 枚への収め方。"""
+"""Shaping the input stereo video: splitting the eyes and fitting them into one quilt tile."""
 
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -14,14 +14,15 @@ StereoLayout = Literal["sbs", "sbs-half", "tb", "tb-half", "separate"]
 LAYOUTS: tuple[str, ...] = get_args(StereoLayout)
 
 FitMode = Literal["pad", "crop"]
-"""タイルの縦横比と入力の縦横比が違うときの収め方。crop は切り落とし、pad は余白を足す。
+"""How to fit an input whose aspect ratio differs from the tile. crop cuts, pad adds margins.
 
-既定は crop。切り出した範囲を画面いっぱいに拡大するので視差も同じ倍率で増え、立体感が強く出る。
+crop is the default. It enlarges the cropped region to fill the screen, which scales disparity by
+the same factor and produces stronger depth.
 """
 
 FIT_MODES: tuple[str, ...] = get_args(FitMode)
 
-# half 系は片眼が横（または縦）に圧縮されて入っている。画素の縦横比で戻す
+# The half layouts store one eye squeezed horizontally (or vertically). Undo it with pixel aspect
 PIXEL_ASPECT: dict[str, float] = {
     "sbs": 1.0,
     "sbs-half": 2.0,
@@ -32,7 +33,7 @@ PIXEL_ASPECT: dict[str, float] = {
 
 
 def split_stereo(frame: Frame, layout: StereoLayout) -> tuple[Frame, Frame]:
-    """1 枚のフレームから左眼・右眼を切り出す。"""
+    """Split one frame into the left and right eye."""
     height, width = frame.shape[:2]
     if layout in ("sbs", "sbs-half"):
         if width % 2:
@@ -48,14 +49,15 @@ def split_stereo(frame: Frame, layout: StereoLayout) -> tuple[Frame, Frame]:
 
 
 def guess_layout(frames: Sequence[Frame]) -> StereoLayout | None:
-    """何コマかから左右の入り方を当てる。判断がつかなければ None。
+    """Guess how the eyes are arranged from a few frames. Returns None when undecidable.
 
-    ステレオ対なら、切り分けた 2 枚は視差の分だけずれた同じ絵になる。無関係な絵より
-    平均絶対差がはるかに小さいので、左右で割った差と上下で割った差を比べれば向きが分かる。
-    たまたま片側が似ているコマもあるので、複数コマの平均で決める。
+    In a stereo pair the two halves are the same picture offset by disparity, so their mean
+    absolute difference is far smaller than for unrelated pictures. Comparing a horizontal split
+    against a vertical one therefore reveals the arrangement. Individual frames can look similar
+    by chance, so decide on the average across several frames.
 
-    潰してある入力（`sbs-half` / `tb-half`）は切り分け方が同じで縦横比だけ違うので、
-    片眼の縦横比が不自然かどうかで見分ける。
+    The squeezed layouts (`sbs-half` / `tb-half`) split the same way and differ only in aspect
+    ratio, so they are told apart by whether one eye's aspect ratio looks implausible.
     """
     scores = [_halves_difference(frame) for frame in frames if min(frame.shape[:2]) >= 2]
     if not scores:
@@ -63,19 +65,19 @@ def guess_layout(frames: Sequence[Frame]) -> StereoLayout | None:
     side_by_side = float(np.mean([score[0] for score in scores]))
     top_bottom = float(np.mean([score[1] for score in scores]))
 
-    # 片方がもう片方の 6 割を下回らないと、ステレオだと言い切れない
-    # （ふつうの 2D 動画はどちらで割っても無関係な絵なので、両方とも大きく出る）
+    # Unless one split falls below 60% of the other, the input cannot be called stereo
+    # (an ordinary 2D video splits into unrelated pictures either way, so both stay large)
     if min(side_by_side, top_bottom) > 0.6 * max(side_by_side, top_bottom):
         return None
     height, width = frames[0].shape[:2]
     if side_by_side < top_bottom:
-        # 片眼が正方形に近いほど横に潰されている。16:9 を横半分にすると 8:9
+        # The closer one eye is to square, the more it is squeezed. Half of 16:9 is 8:9
         return "sbs-half" if (width / 2) / height < 1.2 else "sbs"
     return "tb-half" if width / (height / 2) > 2.4 else "tb"
 
 
 def _halves_difference(frame: Frame) -> tuple[float, float]:
-    """(左右で割った差, 上下で割った差) を平均絶対差で返す。"""
+    """Return (horizontal split difference, vertical split difference) as mean absolute error."""
     height, width = frame.shape[:2]
     values = frame.astype(np.float32)
     return (
@@ -86,19 +88,22 @@ def _halves_difference(frame: Frame) -> tuple[float, float]:
 
 @dataclass(frozen=True)
 class TileFit:
-    """入力フレーム 1 枚をタイル 1 枚へ収める写像。左右の眼で同じものを使う。"""
+    """The mapping from one input frame into one tile. Both eyes use the same one."""
 
     source: tuple[int, int, int, int]
-    """入力から切り出す矩形 (x, y, 幅, 高さ)。"""
+    """The rectangle cropped from the input (x, y, width, height)."""
 
     content_size: tuple[int, int]
-    """タイルの中で絵が占める大きさ (幅, 高さ)。視差推定と視点合成はこの解像度で行う。"""
+    """The size the picture occupies inside the tile (width, height).
+
+    Disparity estimation and view synthesis run at this resolution.
+    """
 
     offset: tuple[int, int]
-    """タイル内で絵を置く左上座標 (x, y)。"""
+    """The top-left coordinate where the picture sits inside the tile (x, y)."""
 
     tile_size: tuple[int, int]
-    """タイル 1 枚の画素数 (幅, 高さ)。"""
+    """One tile's pixel dimensions (width, height)."""
 
     @property
     def padded(self) -> bool:
@@ -108,7 +113,9 @@ class TileFit:
 def crop_rect(
     width: int, height: int, pixel_aspect: float, target_aspect: float
 ) -> tuple[int, int, int, int]:
-    """表示上の縦横比を `target_aspect` に合わせる中央切り出し矩形 (x, y, 幅, 高さ) を返す。"""
+    """Return the centred crop (x, y, width, height) whose displayed aspect matches
+    `target_aspect`.
+    """
     if width < 1 or height < 1:
         raise ValueError(f"大きさが不正（{width}x{height}）")
     if pixel_aspect <= 0 or target_aspect <= 0:
@@ -131,11 +138,12 @@ def plan_fit(
     tile_aspect: float,
     mode: FitMode,
 ) -> TileFit:
-    """入力の大きさとタイルの仕様から収め方を決める。
+    """Decide the fit from the input size and the tile specification.
 
-    タイルの画素の縦横比（`tile_size` の比）と表示上の縦横比（`tile_aspect`）は一致しない。
-    Looking Glass Go は 4092x4092 を 11x6 に割るのでタイルは 372x682 画素だが、
-    表示上は 0.5625（縦長）として出る。余白の量は表示上の比で計算しないと合わない。
+    A tile's pixel aspect ratio (the ratio of `tile_size`) and its displayed aspect ratio
+    (`tile_aspect`) are not the same. Looking Glass Go divides 4092x4092 into 11x6, so a tile is
+    372x682 pixels, yet it displays as 0.5625 (portrait). Padding only comes out right when it is
+    computed from the displayed ratio.
     """
     tile_width, tile_height = tile_size
     if tile_width < 1 or tile_height < 1:
@@ -170,24 +178,25 @@ def plan_fit(
 
 
 def fit_content(image: Frame, fit: TileFit) -> Frame:
-    """入力を切り出して `content_size` へ伸縮する。余白はまだ足さない。
+    """Crop the input and scale it to `content_size`. Padding is not added yet.
 
-    視差推定と視点合成は余白の無い状態で行う。真っ黒な余白は左右で同じ絵なので
-    ステレオマッチングが視差を決められず、自動の収束面（視差の中央値）まで狂わせる。
+    Disparity estimation and view synthesis run without padding. Black padding is identical in
+    both eyes, so stereo matching cannot determine its disparity, and it also throws off the
+    automatic convergence plane (the median disparity).
     """
     x, y, width, height = fit.source
     content_width, content_height = fit.content_size
     cropped = image[y : y + height, x : x + width]
-    # 縮小なら INTER_AREA、拡大なら INTER_CUBIC。tb-half のように縦だけ縮む入力もあるので
-    # 幅だけで決めず、面積で見る
+    # INTER_AREA when shrinking, INTER_CUBIC when enlarging. Some inputs shrink only vertically
+    # (tb-half), so decide on area rather than width alone
     shrinking = width * height > content_width * content_height
     interpolation = cv2.INTER_AREA if shrinking else cv2.INTER_CUBIC
-    # cv2 の型定義は dtype を保たないので、rgb24 のままだと分かっている戻り値を読み替える
+    # cv2's type stubs do not preserve dtype, so re-read the return value we know stays rgb24
     return cast(Frame, cv2.resize(cropped, fit.content_size, interpolation=interpolation))
 
 
 def pad_to_tile(image: Frame, fit: TileFit) -> Frame:
-    """合成済みの絵をタイルの大きさに合わせる。余白が要らなければ素通しする。"""
+    """Fit a synthesized picture to the tile size. Passes through when no padding is needed."""
     if not fit.padded:
         return image
     tile_width, tile_height = fit.tile_size

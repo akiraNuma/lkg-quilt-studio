@@ -48,7 +48,7 @@ def test_crop_trims_height_when_the_source_is_too_tall() -> None:
 
 
 def test_half_side_by_side_is_treated_as_stretched() -> None:
-    # 960x1080 の片眼は表示上 16:9。画素の縦横比 2.0 を渡せば切り出しは不要になる
+    # A 960x1080 eye displays as 16:9; passing a pixel aspect of 2.0 removes the need to crop
     assert crop_rect(960, 1080, 2.0, 960 * 2.0 / 1080) == (0, 0, 960, 1080)
 
 
@@ -65,7 +65,7 @@ def test_fit_content_crops_then_resizes() -> None:
     fit = plan_fit(200, 100, pixel_aspect=1.0, tile_size=(50, 50), tile_aspect=1.0, mode="crop")
     fitted = fit_content(image, fit)
     assert fitted.shape == (50, 50, 3)
-    # 中央 100px（x=50〜149）を切り出すので、右半分だけが白になる
+    # The centre 100 px (x=50-149) is cropped, so only the right half comes out white
     assert fitted[0, -1, 0] == 255
     assert fitted[0, 0, 0] == 0
 
@@ -77,15 +77,15 @@ def test_crop_mode_fills_the_whole_tile() -> None:
     assert fit.content_size == (372, 682)
     assert fit.offset == (0, 0)
     assert not fit.padded
-    # 表示上 9:16 になるまで幅を落とす
+    # Reduce the width until it displays as 9:16
     assert fit.source == (656, 0, 608, 1080)
 
 
 def test_pad_mode_keeps_the_whole_frame_and_letterboxes() -> None:
-    """縦画面の Go に横長の素材を入れると上下に余白が入る。
+    """Landscape footage on the portrait Go gets padding above and below.
 
-    タイルの画素の縦横比（372/682）と表示上の縦横比（0.5625）は一致しないので、
-    余白の量は表示上の比で決まる。
+    A tile's pixel aspect ratio (372/682) and its displayed ratio (0.5625) differ, so the amount
+    of padding follows the displayed ratio.
     """
     fit = plan_fit(
         1920, 1080, pixel_aspect=1.0, tile_size=(372, 682), tile_aspect=0.5625, mode="pad"
@@ -93,7 +93,7 @@ def test_pad_mode_keeps_the_whole_frame_and_letterboxes() -> None:
     assert fit.source == (0, 0, 1920, 1080)
     assert fit.content_size[0] == 372
     assert fit.padded
-    # 表示上の縦横比が保たれる: 幅いっぱい 0.5625 に対して高さは 16:9 の分だけ
+    # The displayed aspect is preserved: full width at 0.5625, height only as far as 16:9 needs
     displayed = 0.5625 * (fit.content_size[0] / 372) / (fit.content_size[1] / 682)
     assert abs(displayed - 1920 / 1080) < 0.01
     assert fit.offset == (0, (682 - fit.content_size[1]) // 2)
@@ -141,10 +141,10 @@ def test_plan_fit_rejects_an_invalid_tile() -> None:
 
 
 def _stereo_pair(disparity: int, layout: str, seed: int = 3) -> np.ndarray:
-    """視差 `disparity` の左右を `layout` の並びに詰めた 1 コマを作る。
+    """Build one frame packing a stereo pair at `disparity` into the `layout` arrangement.
 
-    一様ノイズだと数画素ずらしただけで無相関になり、実写と挙動が変わる。
-    小さいノイズを引き伸ばして、実際の映像のような滑らかな絵にする。
+    Uniform noise becomes uncorrelated after a shift of a few pixels and behaves unlike real
+    footage, so small noise is stretched into a smooth picture resembling actual video.
     """
     generator = np.random.default_rng(seed)
     height, width, margin = 120, 240, 40
@@ -159,7 +159,7 @@ def _stereo_pair(disparity: int, layout: str, seed: int = 3) -> np.ndarray:
 
 def test_guess_layout_finds_side_by_side() -> None:
     frames = [_stereo_pair(6, "sbs") for _ in range(3)]
-    # 片眼 240x120（2:1）なので潰されてはいない
+    # Each eye is 240x120 (2:1), so it is not squeezed
     assert guess_layout(frames) == "sbs"
 
 
@@ -168,7 +168,7 @@ def test_guess_layout_finds_top_bottom() -> None:
 
 
 def test_guess_layout_gives_up_on_a_2d_frame() -> None:
-    """2D 動画はどちらで割っても無関係な絵になる。当てずっぽうを返さない。"""
+    """A 2D video splits into unrelated pictures either way, so no guess is returned."""
     generator = np.random.default_rng(11)
     frames = [
         np.ascontiguousarray(

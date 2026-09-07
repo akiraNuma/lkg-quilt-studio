@@ -1,10 +1,10 @@
-"""DIBR（Depth Image Based Rendering）による視点合成。
+"""View synthesis by DIBR (Depth Image Based Rendering).
 
-左画像基準の視差から、左右のどちらでもない位置の視点を作る。位置は
-`position=0.0` が左カメラ、`1.0` が右カメラ。0 未満・1 超は外挿になる。
+Builds views at positions other than the two cameras from left-referenced disparity.
+`position=0.0` is the left camera and `1.0` the right; below 0 and above 1 extrapolate.
 
-外挿では左に写っていない面が必ず露出する（disocclusion）。そこを右画像から
-拾い、両方に写っていない画素だけを最後に inpaint で埋める。
+Extrapolation always exposes surfaces the left image does not contain (disocclusions). Those are
+taken from the right image, and only pixels missing from both are finally filled by inpainting.
 """
 
 from dataclasses import dataclass
@@ -20,14 +20,15 @@ from .video import Frame
 
 @dataclass(frozen=True)
 class SynthesisParams:
-    """視点合成の設定。"""
+    """View synthesis settings."""
 
     crack_width: int = 2
     convergence: float = 0.0
     consistency_tolerance: float = 1.0
     inpaint_radius: int = 3
 
-    # 遮蔽判定の許容差は視差に比例して緩める。視差が大きい面ほど推定の誤差も大きい
+    # Loosen the occlusion tolerance in proportion to disparity: larger disparity carries larger
+    # estimation error
     tolerance_ratio: float = 0.05
 
     def __post_init__(self) -> None:
@@ -40,19 +41,20 @@ class SynthesisParams:
 
 
 MINIMUM_AGREEMENT = 0.05
-"""これ以下の一致度は信用しない（0 に落として穴として扱う）。
+"""Agreement at or below this is not trusted (dropped to 0 and treated as a hole).
 
-判定は一致度に掛ける。混ぜた後の重みに掛けると、視点が端に寄って片側の位置の重みが
-小さいときに、正しく写っている画素まで穴へ落ちる。
+The test applies to the agreement value. Applying it to the blended weight instead would drop
+correctly imaged pixels into holes whenever a view sits near an edge and one side's weight is
+small.
 """
 
 
 def view_positions(view_count: int, span: float) -> list[float]:
-    """視点数と広がりから、各視点のカメラ位置を返す。
+    """Return each view's camera position from the view count and the span.
 
-    `span=1.0` で左右カメラの間だけを使い、大きくすると両側へ外挿する。
-    ステレオの基線は Looking Glass の視野角より狭いので既定では外挿するが、
-    広げるほど穴埋めの面積が増えて画質が落ちる。
+    `span=1.0` uses only the range between the two cameras; larger values extrapolate to both
+    sides. The stereo baseline is narrower than Looking Glass's view cone, so the default
+    extrapolates, but widening it grows the area that must be hole-filled and costs quality.
     """
     if view_count < 1:
         raise ValueError(f"view_count は 1 以上（受け取った値: {view_count}）")
@@ -64,10 +66,10 @@ def view_positions(view_count: int, span: float) -> list[float]:
 
 
 def forward_warp(disparity: DisparityMap, shift: float) -> tuple[DisparityMap, NDArray[np.bool_]]:
-    """視差マップを `x + shift * disparity` の位置へ前進ワープする。
+    """Forward-warp a disparity map to `x + shift * disparity`.
 
-    同じ行の複数画素が同じ列に落ちたら視差の大きい方（＝手前の面）を採る。
-    これで遮蔽が正しい側に出る。
+    When several pixels in a row land on the same column, the larger disparity (the nearer
+    surface) wins, which puts the occlusion on the correct side.
     """
     height, width = disparity.shape
     columns = np.arange(width, dtype=np.float32)
@@ -82,20 +84,22 @@ def forward_warp(disparity: DisparityMap, shift: float) -> tuple[DisparityMap, N
 
 
 class ViewSynthesizer:
-    """1 フレーム分の左右画像と視差から、任意位置の視点を合成する。
+    """Synthesize a view at an arbitrary position from one frame's images and disparity.
 
-    右画像基準の視差は左の視差を右視点へ前進ワープして作る。フレームごとに
-    一度だけ用意して、視点ごとの合成で使い回す。
+    Right-referenced disparity is produced by forward-warping the left disparity to the right
+    viewpoint, prepared once per frame and reused across views.
 
-    ステレオマッチングから右基準の視差を直接取る手もある（`cv2.ximgproc.createRightMatcher`
-    の出力は符号を反転すれば使える）が、**使うと品質が落ちる**。一致判定は左右の視差が
-    互いに整合していることが前提で、独立に推定した 2 枚は許容差を越えてずれる。
-    実測では穴の割合が平均 0.51 % から 5.51 %（最悪 19 %）へ悪化した
-    （--display 16 / --span 2.0、許容差はすべて既定値での測定）。
-    前進ワープで作れば整合は構造的に保証される。
+    Stereo matching can supply right-referenced disparity directly (the output of
+    `cv2.ximgproc.createRightMatcher` works once its sign is flipped), but **using it lowers
+    quality**. The agreement test assumes the two disparity maps are mutually consistent, and two
+    independently estimated maps disagree beyond the tolerance. Measured, the hole ratio worsened
+    from 0.51% on average to 5.51% (19% at worst) with --display 16 / --span 2.0 and all
+    tolerances at their defaults. Producing it by forward warping guarantees consistency
+    structurally.
 
-    代わりに、左右のカメラ位置で穴の量が非対称になる（同じ条件で位置 0.0 が 0.00 %、
-    位置 1.0 が 0.78 %）。ワープ自体が空ける穴の分だけ右側の判定が厳しいため。
+    In exchange, the amount of holes is asymmetric between the two camera positions (under the
+    same conditions, 0.00% at position 0.0 against 0.78% at position 1.0), because the warp
+    itself opens holes that make the test on the right side stricter.
     """
 
     def __init__(
@@ -113,14 +117,15 @@ class ViewSynthesizer:
         self._disparity_right, _ = fill_horizontal(warped, valid, max_gap=params.crack_width)
 
     def view(self, position: float) -> Frame:
-        """`position` の位置から見た 1 枚を合成する。"""
+        """Synthesize the single view seen from `position`."""
         params = self._params
         height, width = self._disparity_left.shape
         columns = np.arange(width, dtype=np.float32)[None, :]
         rows = np.arange(height, dtype=np.float32)[:, None]
         row_map = np.broadcast_to(rows, (height, width)).astype(np.float32)
 
-        # 収束面（視差 = convergence の面）が全視点で同じ位置に来るよう視差をずらす
+        # Offset disparity so the convergence plane (where disparity == convergence) lands at the
+        # same place in every view
         shifted = self._disparity_left - params.convergence
         warped, warp_valid = forward_warp(shifted, -position)
         target, _ = fill_horizontal(warped, warp_valid, max_gap=params.crack_width)
@@ -163,13 +168,15 @@ class ViewSynthesizer:
         map_y: DisparityMap,
         assumed: DisparityMap,
     ) -> tuple[NDArray[np.float32], NDArray[np.float32]]:
-        """`map_x` の位置で色を拾い、その面が想定した視差とどれだけ一致するかも返す。
+        """Sample colour at `map_x`, also returning how well that surface agrees with the
+        expected disparity.
 
-        拾った先の視差が想定と食い違う画素は、その視点では別の面に隠れている。
-        一致判定を入れないと、遮蔽された面の色が引き伸ばされて混ざる。
+        A pixel whose sampled disparity disagrees with the expectation is hidden behind another
+        surface in this view. Without the agreement test, the colour of an occluded surface is
+        stretched into the result.
 
-        重みは 0 / 1 の二値にしない。境界が視点ごとに 1 px 単位で跳ぶと、
-        再生時に輪郭がちらつく。許容差の 2 倍までを遷移域にして滑らかに落とす。
+        The weight is not binary. A boundary that jumps by a pixel from view to view makes
+        outlines flicker during playback, so it falls off smoothly over twice the tolerance.
         """
         params = self._params
         sampled_x = np.ascontiguousarray(map_x, dtype=np.float32)
@@ -185,8 +192,8 @@ class ViewSynthesizer:
         tolerance = params.consistency_tolerance + params.tolerance_ratio * np.abs(assumed)
         error = np.abs(found - assumed)
         agreement = np.clip(2.0 - error / np.maximum(tolerance, 1e-6), 0.0, 1.0)
-        # わずかに残った一致度で穴を「埋まった」ことにしない。落とさないと、
-        # 奥行き境界の数 px が inpaint されず遮蔽色が薄く伸びる
+        # Do not let a trace of agreement count a hole as filled. Without dropping it, a few
+        # pixels at a depth boundary escape inpainting and smear the occluded colour
         agreement = np.where(agreement > MINIMUM_AGREEMENT, agreement, 0.0)
         inside = (sampled_x >= 0.0) & (sampled_x <= float(image.shape[1] - 1))
         return color, (agreement * inside).astype(np.float32)

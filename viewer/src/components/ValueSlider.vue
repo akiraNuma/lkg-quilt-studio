@@ -8,7 +8,7 @@ const props = defineProps<{
   min: number
   max: number
   step: number
-  /** 欄に入れた値を丸める桁数。表示は末尾の 0 を落とす */
+  /** Decimals a typed value is rounded to; the display drops trailing zeros */
   decimals?: number
   unit?: string
   disabled?: boolean
@@ -21,13 +21,13 @@ const digits = computed(() => props.decimals ?? 0)
 const text = ref(format(value.value))
 const invalid = ref(false)
 
-// つまんで動かした値は欄にも出す。2 か所に違う数が見えるとどちらが本物か分からない
+// A dragged value also shows in the field; two different numbers would leave neither credible
 watch(value, current => {
   invalid.value = false
   text.value = format(current)
 })
 
-/** 欄で確定したときだけ受ける。打っている途中に書き戻すと桁を消せない */
+/** Accept only a committed field value; writing back mid-typing makes digits impossible to erase */
 function commit(): void {
   const parsed = parseNumber(text.value)
   if (parsed === null) {
@@ -35,7 +35,8 @@ function commit(): void {
     return
   }
   invalid.value = false
-  // スライダーの範囲へ丸める。欄だけ範囲外に出せると、絵とスライダーの位置が食い違う
+  // Clamp to the slider range. Letting only the field leave it would make the picture and the
+  // slider position disagree
   const rounded = clampRound(
     parsed,
     props.min,
@@ -52,7 +53,8 @@ function format(current: number): string {
 </script>
 
 <template>
-  <!-- ルートは 1 つにする。複数だと親のグリッドの直下に並んで列がずれる -->
+  <!-- Keep a single root. Several roots become direct children of the parent grid and shift the
+       columns -->
   <div>
     <div class="slider">
       <label :for="id">{{ label }}</label>
@@ -87,7 +89,7 @@ function format(current: number): string {
 <style scoped>
 .slider {
   display: grid;
-  /* 列幅は固定にする。各行が別のグリッドなので、auto にすると行ごとに幅がずれる */
+  /* Fixed column widths: each row is its own grid, so auto would give every row a different width */
   grid-template-columns: 6.2rem 1fr 4.8rem;
   align-items: center;
   gap: 0.5rem;

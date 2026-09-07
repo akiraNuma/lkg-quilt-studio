@@ -1,5 +1,5 @@
-// 変換 API（converter/src/lkg_quilt_converter/server.py）の呼び出し。
-// 失敗は例外で投げ、画面に出す文言への変換は describe() に寄せる。
+// Calls into the conversion API (converter/src/lkg_quilt_converter/server.py).
+// Failures throw; turning them into on-screen text is left to describe().
 
 import { t } from './i18n'
 import type { DisplayPreset } from './quilt'
@@ -18,36 +18,36 @@ export type ConvertJob = {
   outputName: string | null
   resultUrl: string | null
   error: string | null
-  /** 変換を始めた時刻（秒）。走っていなければ null */
+  /** When the conversion started, in seconds, or null when it is not running */
   startedAt: number | null
   createdAt: number
-  /** 成果物の大きさ（バイト）。まだ無ければ 0 */
+  /** Output size in bytes, or 0 when there is none yet */
   sizeBytes: number
 }
 
-/** 変換に渡す設定のうち、画面で選ぶもの。 */
+/** The conversion settings chosen on screen. */
 export type SourceSettings = {
   layout: string
   display: string
-  /** 入力の写り方。fisheye は VR180 の魚眼を平面へ直してから視差を取る */
+  /** How the input was captured. fisheye flattens VR180 before estimating disparity */
   projection: string
-  /** 魚眼を平面へ直すときの水平視野角（度）。projection が flat なら使われない */
+  /** Horizontal field of view in degrees when flattening fisheye; unused when projection is flat */
   fov: number
   fit: string
   swapEyes: boolean
 }
 
-/** 1 枚の絵を決める設定。プレビューと変換の両方がこの形で渡す。 */
+/** The settings that determine one picture, passed in this shape by preview and conversion. */
 export type RenderSettings = SourceSettings & {
   span: number
-  /** 収束面の視差。`auto` なら変換側が決める */
+  /** The convergence disparity. With `auto`, the converter decides */
   convergence: string
 }
 
-/** 動画全体を焼くときだけ要る指定。 */
+/** Options needed only when baking a whole video. */
 export type OutputSettings = {
   start: number
-  /** 変換する枚数。null なら開始位置から最後まで */
+  /** How many frames to convert. null means from the start position to the end */
   frames: number | null
   copyAudio: boolean
 }
@@ -55,7 +55,7 @@ export type OutputSettings = {
 export type QuiltSourceInfo = {
   id: string
   name: string
-  /** 取り込んだ動画の大きさ（バイト）。数百 MB 残るので一覧に出す */
+  /** Imported video size in bytes. Hundreds of megabytes remain, so the list shows it */
   sizeBytes: number
   createdAt: number
   width: number
@@ -63,13 +63,13 @@ export type QuiltSourceInfo = {
   fps: number
   frameCount: number
   hasAudio: boolean
-  /** 左右の入り方の推定。当たらないこともあるので初期値としてだけ使う */
+  /** The guessed eye arrangement. It can be wrong, so it is only an initial value */
   suggestedLayout: string | null
-  /** 写り方の推定。同じく初期値としてだけ使う */
+  /** The guessed projection, likewise only an initial value */
   suggestedProjection: string | null
 }
 
-/** 1 フレームだけ変換した結果。`convergence` は実際に使われた収束面の視差 */
+/** The result of converting a single frame. `convergence` is the disparity actually used */
 export type PreviewResult = {
   blob: Blob
   convergence: number
@@ -88,17 +88,17 @@ export async function readOptions(): Promise<ConverterOptions> {
   return (await request('/api/options')) as ConverterOptions
 }
 
-/** 取り込み済みの動画。同じ素材でパラメータを変えるときは上げ直さない。 */
+/** Imported videos. Changing parameters on the same source does not re-upload it. */
 export async function listSources(): Promise<QuiltSourceInfo[]> {
   return (await request('/api/sources')) as QuiltSourceInfo[]
 }
 
-/** 取り込んだ動画を消す。変換中の素材はサーバーが 409 で断る。 */
+/** Delete an imported video. The server answers 409 for a source being converted. */
 export async function deleteSource(id: string): Promise<void> {
   await noContent(`/api/sources/${id}`, 'DELETE')
 }
 
-/** 動画を 1 回だけ上げる。プレビューと変換はこの id を指す。 */
+/** Upload a video once. Preview and conversion both refer to this id. */
 export async function uploadSource(
   file: File
 ): Promise<QuiltSourceInfo> {
@@ -110,7 +110,7 @@ export async function uploadSource(
   })) as QuiltSourceInfo
 }
 
-/** 1 フレームだけ変換して quilt の画像を取る。変換本体と同じ経路を通る。 */
+/** Convert a single frame and fetch the quilt image, through the same path as a full run. */
 export async function renderPreview(
   sourceId: string,
   settings: RenderSettings,
@@ -152,7 +152,7 @@ export async function listJobs(): Promise<ConvertJob[]> {
   return (await request('/api/jobs')) as ConvertJob[]
 }
 
-/** ジョブと成果物を消す。走っているジョブはサーバーが 409 で断る。 */
+/** Delete a job and its output. The server answers 409 for a running job. */
 export async function deleteJob(id: string): Promise<void> {
   await noContent(`/api/jobs/${id}`, 'DELETE')
 }
@@ -161,7 +161,7 @@ export async function readJob(id: string): Promise<ConvertJob> {
   return (await request(`/api/jobs/${id}`)) as ConvertJob
 }
 
-/** 走っている変換を止める。書きかけの動画は残らない。 */
+/** Stop a running conversion. No partial video is left behind. */
 export async function cancelJob(id: string): Promise<void> {
   await noContent(`/api/jobs/${id}/cancel`, 'POST')
 }
@@ -192,7 +192,7 @@ function toFormData(
   return form
 }
 
-/** 204 を返す経路。JSON は読まない */
+/** Endpoints answering 204; no JSON is read */
 async function noContent(url: string, method: string): Promise<void> {
   const response = await fetch(url, { method })
   if (!response.ok) throw new Error(await readError(response))
@@ -207,7 +207,7 @@ async function request(
   return response.json()
 }
 
-/** FastAPI は失敗を {detail: ...} で返す。文字列でないこともある */
+/** FastAPI returns failures as {detail: ...}, which is not always a string */
 async function readError(response: Response): Promise<string> {
   try {
     const body = (await response.json()) as { detail?: unknown }
@@ -215,7 +215,7 @@ async function readError(response: Response): Promise<string> {
     if (typeof detail === 'string') return detail
     if (detail !== undefined) return JSON.stringify(detail)
   } catch {
-    // JSON でない応答（プロキシの 502 など）はそのまま status で見せる
+    // A non-JSON response (a proxy 502, say) is shown by its status as is
   }
   return t('api.status', { status: response.status })
 }
