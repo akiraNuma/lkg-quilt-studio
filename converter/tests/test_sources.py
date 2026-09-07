@@ -118,7 +118,7 @@ def _write_state(root: Path, source_id: str, *, created_at: float, body: bytes =
     )
 
 
-@pytest.mark.skipif(not SAMPLE.exists(), reason="サンプル動画が無い")
+@pytest.mark.skipif(not SAMPLE.exists(), reason="the sample video is missing")
 def test_real_video_is_probed_on_upload(tmp_path: Path) -> None:
     store = SourceStore(tmp_path)
     staged = tmp_path / "staged.upload"

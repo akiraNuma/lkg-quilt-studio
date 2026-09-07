@@ -52,7 +52,7 @@ scripts/check-harness.sh          # scripts/ format, lint, and types, then harne
 
 To validate everything, run `scripts/check.sh` from the repository root.
 For harness-only changes, run `scripts/check-harness.sh` and check the affected references.
-See “Shared Codex harness” in README.md for the Codex entry point, shared configuration sync, and initial trust setup.
+See `AGENTS.md` for the Codex entry point, configuration sync, and hook trust.
 
 Run computational checks outside containers. Neither image in `compose.yaml` includes development dependencies.
 
@@ -159,11 +159,14 @@ Inspect the official documentation, paper, or reference implementation before im
   and differ from the preview. **Changing `span` (depth strength) requires a new render because it creates different views.**
 - **Arrange four panels in workflow order (display → source → adjustment → export):** a device must be selected
   before anything can render, so Bridge connection belongs at the start. Keep the image on the left and numbered
-  controls in the right column (the `App.vue` layout and each `*Panel.vue`).
+  controls in the right column (the `App.vue` layout and each `*Panel.vue`). **“Move to Looking Glass” appears both under the
+  picture and at the top of the Tune panel:** tuning is meant to happen while the still shows on the device, and
+  with the button only under the picture the user did not realize that was possible. Both drive one stage state.
 - **Re-render automatically instead of requiring a button:** otherwise users can adjust a stale image and discover
   the mismatch only on hardware. Wait 400 ms after a setting changes, then render one frame; if settings change during
   rendering, run again (`renderKey` / `run` in `usePreview.ts`). Do not submit while dragging (a frame takes 2 seconds
-  in the observed case). Show “描き直している…” over the image while re-rendering.
+  in the observed case). While re-rendering, show a spinner with “描き直している…” both over the image and in the
+  Tune panel beside the sliders that caused it (the user asked for visible activity where the value was changed).
 - **Keep UI text in `viewer/src/i18n.ts` and support Japanese and English:** the small custom implementation makes
   **missing English strings fail type checking** (`en` is declared as `Record<keyof typeof ja, string>`).
   No vue-i18n features were needed. Conventions are in `.claude/rules/viewer-vue.md`.

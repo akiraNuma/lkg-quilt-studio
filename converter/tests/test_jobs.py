@@ -56,7 +56,7 @@ def test_layout_separate_is_rejected() -> None:
         lambda: ConvertRequest(span=0.0),
         lambda: ConvertRequest(start=-1),
         lambda: ConvertRequest(frames=0),
-        lambda: ConvertRequest(convergence="まんなか"),
+        lambda: ConvertRequest(convergence="middle"),
         lambda: ConvertRequest(projection="nope"),  # type: ignore[arg-type]
         lambda: ConvertRequest(fov=0.0),
         lambda: ConvertRequest(fov=180.0),
@@ -129,7 +129,7 @@ def test_cancel_is_rejected_after_the_job_settled(tmp_path: Path) -> None:
     store.close()
 
 
-@pytest.mark.skipif(not SAMPLE.exists(), reason="サンプル動画が無い")
+@pytest.mark.skipif(not SAMPLE.exists(), reason="the sample video is missing")
 def test_cancel_stops_the_conversion_and_leaves_no_output(tmp_path: Path) -> None:
     """A cancelled job leaves no partial video, and nothing matching the naming convention."""
     sources = SourceStore(tmp_path / "sources")
@@ -223,7 +223,7 @@ def test_restore_marks_interrupted_jobs_as_failed(tmp_path: Path) -> None:
     restored = JobStore(root, SourceStore(tmp_path / "sources")).get("abc123")
     assert restored is not None
     assert restored.status == "failed"
-    assert restored.error == "サーバーの再起動で中断した"
+    assert restored.error == "interrupted by a server restart"
 
 
 def test_progress_is_zero_before_the_total_is_known() -> None:
@@ -257,4 +257,4 @@ def _wait_until_settled(store: JobStore, job_id: str, *, timeout: float = 20.0) 
         if job is not None and job.status in ("done", "failed", "cancelled"):
             return
         time.sleep(0.05)
-    raise AssertionError(f"{job_id} が終わらなかった")
+    raise AssertionError(f"{job_id} never finished")

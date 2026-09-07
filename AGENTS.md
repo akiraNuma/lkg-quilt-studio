@@ -28,7 +28,22 @@ Read the applicable rules before editing, including when working from the reposi
   If named agents are unavailable, ask a regular subagent to read
   `.claude/agents/code-reviewer.md` and review without editing files.
 
+## Permissions and hooks
+
 The authority for permissions and hooks is `.claude/settings.json`.
-Generate Codex machine settings with `python3 scripts/sync-harness.py`.
+Generate Codex machine settings with `python3 scripts/sync-harness.py`; do not edit
+`.codex/hooks.json` or `.codex/rules/claude.rules` by hand.
 Validate synchronization, references, and input formats with `scripts/check-harness.sh`.
-Execution permission modes and hook trust follow the client's settings.
+Hooks and synchronization need Python 3.9 or later on PATH.
+
+In Codex CLI, open `/hooks`, inspect and trust the session-start and pre-edit hooks, then start
+a new session. Inspect them again after their definitions change. The pre-edit hook covers
+Claude's `Edit` and `Write` and Codex's `apply_patch`; before editing through a shell or another
+tool, read the matching rules yourself.
+
+The tracked `.codex/config.toml` sets `approval_policy = "never"` and
+`sandbox_mode = "danger-full-access"`, so Codex runs in this repository without approval prompts.
+Managed settings and launch options take precedence if you want something stricter.
+Checked against `codex-cli 0.153.4`; a passing static check does not prove the client trusted
+or executed the hooks. See the [hook documentation](https://learn.chatgpt.com/docs/hooks) and
+[permission rule documentation](https://learn.chatgpt.com/docs/agent-configuration/rules).

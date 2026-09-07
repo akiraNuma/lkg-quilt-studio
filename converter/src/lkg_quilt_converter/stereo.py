@@ -37,15 +37,15 @@ def split_stereo(frame: Frame, layout: StereoLayout) -> tuple[Frame, Frame]:
     height, width = frame.shape[:2]
     if layout in ("sbs", "sbs-half"):
         if width % 2:
-            raise ValueError(f"横並びの入力は幅が偶数である必要がある（{width}）")
+            raise ValueError(f"a side-by-side input needs an even width ({width})")
         middle = width // 2
         return frame[:, :middle], frame[:, middle:]
     if layout in ("tb", "tb-half"):
         if height % 2:
-            raise ValueError(f"縦並びの入力は高さが偶数である必要がある（{height}）")
+            raise ValueError(f"a top-and-bottom input needs an even height ({height})")
         middle = height // 2
         return frame[:middle], frame[middle:]
-    raise ValueError(f"{layout} は 1 本の動画から左右を切り出せない")
+    raise ValueError(f"{layout} cannot split the eyes out of a single video")
 
 
 def guess_layout(frames: Sequence[Frame]) -> StereoLayout | None:
@@ -117,9 +117,11 @@ def crop_rect(
     `target_aspect`.
     """
     if width < 1 or height < 1:
-        raise ValueError(f"大きさが不正（{width}x{height}）")
+        raise ValueError(f"invalid size ({width}x{height})")
     if pixel_aspect <= 0 or target_aspect <= 0:
-        raise ValueError(f"縦横比は正の数（pixel={pixel_aspect} target={target_aspect}）")
+        raise ValueError(
+            f"aspect ratios must be positive (pixel={pixel_aspect} target={target_aspect})"
+        )
 
     displayed = width * pixel_aspect / height
     if displayed > target_aspect:
@@ -147,7 +149,7 @@ def plan_fit(
     """
     tile_width, tile_height = tile_size
     if tile_width < 1 or tile_height < 1:
-        raise ValueError(f"タイルの大きさが不正（{tile_width}x{tile_height}）")
+        raise ValueError(f"invalid tile size ({tile_width}x{tile_height})")
     if mode == "crop":
         return TileFit(
             source=crop_rect(width, height, pixel_aspect, tile_aspect),
@@ -156,9 +158,11 @@ def plan_fit(
             tile_size=tile_size,
         )
     if width < 1 or height < 1:
-        raise ValueError(f"大きさが不正（{width}x{height}）")
+        raise ValueError(f"invalid size ({width}x{height})")
     if pixel_aspect <= 0 or tile_aspect <= 0:
-        raise ValueError(f"縦横比は正の数（pixel={pixel_aspect} tile={tile_aspect}）")
+        raise ValueError(
+            f"aspect ratios must be positive (pixel={pixel_aspect} tile={tile_aspect})"
+        )
 
     displayed = width * pixel_aspect / height
     if displayed > tile_aspect:

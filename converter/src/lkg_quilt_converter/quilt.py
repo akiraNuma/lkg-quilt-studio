@@ -27,11 +27,13 @@ class QuiltSpec:
 
     def __post_init__(self) -> None:
         if self.columns < 1 or self.rows < 1:
-            raise ValueError(f"列数・行数は 1 以上（{self.columns}x{self.rows}）")
+            raise ValueError(f"columns and rows must be at least 1 ({self.columns}x{self.rows})")
         if self.width < self.columns or self.height < self.rows:
-            raise ValueError(f"解像度がタイル数より小さい（{self.width}x{self.height}）")
+            raise ValueError(
+                f"the resolution is smaller than the tile count ({self.width}x{self.height})"
+            )
         if self.aspect <= 0:
-            raise ValueError(f"aspect は正の数（受け取った値: {self.aspect}）")
+            raise ValueError(f"aspect must be positive (received: {self.aspect})")
 
     @property
     def view_count(self) -> int:
@@ -63,7 +65,7 @@ class QuiltSpec:
         """
         if not 0 <= view_index < self.view_count:
             raise ValueError(
-                f"視点 {view_index} は範囲外（0〜{self.view_count - 1}）: "
+                f"view {view_index} is out of range (0 to {self.view_count - 1}): "
                 f"{self.columns}x{self.rows}"
             )
         tile_width, tile_height = self.tile_size
@@ -76,13 +78,16 @@ class QuiltSpec:
     def compose(self, views: Sequence[Frame]) -> Frame:
         """Arrange view images into one quilt. The sequence starts at view 0."""
         if len(views) != self.view_count:
-            raise ValueError(f"視点数が合わない: {len(views)} 枚 / {self.view_count} 必要")
+            raise ValueError(
+                f"wrong number of views: {len(views)} given, {self.view_count} required"
+            )
         tile_width, tile_height = self.tile_size
         quilt = np.zeros((self.height, self.width, 3), dtype=np.uint8)
         for index, view in enumerate(views):
             if view.shape != (tile_height, tile_width, 3):
                 raise ValueError(
-                    f"視点 {index} の形が違う: {view.shape} / ({tile_height}, {tile_width}, 3) 必要"
+                    f"view {index} has the wrong shape: {view.shape},"
+                    f" ({tile_height}, {tile_width}, 3) required"
                 )
             x, y = self.tile_origin(index)
             quilt[y : y + tile_height, x : x + tile_width] = view

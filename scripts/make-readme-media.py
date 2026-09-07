@@ -32,7 +32,7 @@ DISPLAY = "go"
 LAYOUT = "tb"
 SPAN = 1.2
 CARD = (255, 255, 255)
-INK = (47, 41, 36)  # BGR。GitHub の本文色 #24292f に合わせる
+INK = (47, 41, 36)  # BGR, matching GitHub's body colour #24292f
 LABEL = cv2.FONT_HERSHEY_DUPLEX
 PANEL = 300
 """Height in pixels of each panel's image area, so the row lines up side by side."""
@@ -44,7 +44,7 @@ BAR = 24
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", type=Path, default=ROOT / "samples/bbb_stereo_tb.mp4")
-    parser.add_argument("--frame", type=int, default=0, help="素材にする動画のフレーム番号")
+    parser.add_argument("--frame", type=int, default=0, help="which frame of the source to use")
     parser.add_argument("--output-dir", type=Path, default=ROOT / "docs/media")
     args = parser.parse_args()
 
@@ -160,7 +160,7 @@ def sweep_views(count: int, samples: int) -> list[int]:
     where hole filling looks rough, so a GIF that hides them would flatter the hardware.
     """
     if count < 2 or not 2 <= samples <= count:
-        raise ValueError(f"視点の間引きが不正（count={count} samples={samples}）")
+        raise ValueError(f"invalid view thinning (count={count} samples={samples})")
     picks = [round(position * (count - 1) / (samples - 1)) for position in range(samples)]
     return picks + picks[-2:0:-1]
 
@@ -279,7 +279,7 @@ def save(path: Path, image: np.ndarray, *params: int) -> None:
     # cv2.imwrite returns False instead of raising, and moving on silently fails obscurely in
     # ffmpeg
     if not cv2.imwrite(str(path), image, list(params)):
-        raise ValueError(f"{path} に書き出せなかった")
+        raise ValueError(f"could not write {path}")
 
 
 def run(command: list[str]) -> None:

@@ -1,4 +1,4 @@
-/* 色とフォームの見た目はここだけに置く。各コンポーネントは var() を使う */
+/* Colours and form appearance live only here. Components use var() */
 
 :root {
   color-scheme: dark;
@@ -54,7 +54,7 @@ a {
   color: var(--accent);
 }
 
-/* フォーカスはどの部品でも同じ見え方にする。キーボードで辿れないと調整できない */
+/* Focus looks the same on every control; tuning has to be reachable from the keyboard */
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -90,7 +90,7 @@ input:disabled {
   cursor: not-allowed;
 }
 
-/* 各段の主役の操作。押す場所が 1 つに見えるようにする */
+/* The main action of a step, so there is one obvious place to press */
 button.primary {
   background: var(--accent);
   border-color: var(--accent);
@@ -120,7 +120,7 @@ progress {
   overflow: hidden;
 }
 
-/* 以下は画面共通の並べ方。scoped で同じものを書き直さない */
+/* Shared layout classes. Do not rewrite them in scoped styles */
 
 .row {
   display: flex;
@@ -148,7 +148,7 @@ progress {
   margin: 0;
 }
 
-/* 手順のパネル。番号を振って上から順に進む形にする */
+/* Numbered step panels, worked through from the top */
 
 .panel {
   background: var(--surface);
@@ -182,4 +182,29 @@ progress {
   color: var(--accent);
   font-size: 0.75rem;
   font-variant-numeric: tabular-nums;
+}
+
+/* Marks a redraw in flight. Shown where the value that caused it was changed and on the picture */
+.spinner {
+  display: inline-block;
+  width: 0.75em;
+  height: 0.75em;
+  margin-right: 0.45em;
+  vertical-align: -0.1em;
+  border: 2px solid var(--line-strong);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+  }
 }

@@ -28,14 +28,14 @@ def main(argv: list[str] | None = None) -> int:
             convert(options)
         else:
             _write_png(options.output, render_single_frame(options))
-            print(f"{options.output} を書き出した", file=sys.stderr)
+            print(f"wrote {options.output}", file=sys.stderr)
     # cv2.error sits directly under Exception and inherits neither OSError nor ValueError
     except cv2.error as failure:
-        print(f"エラー: OpenCV の処理が失敗した: {failure}", file=sys.stderr)
+        print(f"error: OpenCV failed: {failure}", file=sys.stderr)
         return 2
     # FileNotFoundError derives from OSError; a full disk or missing permission lands here too
     except (ValueError, FfmpegError, OSError) as failure:
-        print(f"エラー: {failure}", file=sys.stderr)
+        print(f"error: {failure}", file=sys.stderr)
         return 2
     return 0
 
@@ -43,102 +43,126 @@ def main(argv: list[str] | None = None) -> int:
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="lkg-quilt-converter",
-        description="ステレオ動画を Looking Glass 用の quilt へ変換する",
+        description="Convert stereo video into a quilt for Looking Glass",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
-    _add_common(subparsers.add_parser("convert", help="quilt 動画を書き出す"))
-    _add_common(subparsers.add_parser("frame", help="1 フレームだけ quilt の PNG を書き出す"))
+    _add_common(subparsers.add_parser("convert", help="write the quilt video"))
+    _add_common(subparsers.add_parser("frame", help="write a single frame as a quilt PNG"))
     return parser
 
 
 def _add_common(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("source", type=Path, help="入力のステレオ動画")
-    parser.add_argument("--right", type=Path, default=None, help="右眼の動画（--layout separate）")
-    parser.add_argument("--output-dir", type=Path, default=Path("out"), help="出力先ディレクトリ")
-    parser.add_argument("--stem", default=None, help="出力ファイル名の幹（既定は入力名）")
+    parser.add_argument("source", type=Path, help="the input stereo video")
+    parser.add_argument(
+        "--right", type=Path, default=None, help="the right-eye video (--layout separate)"
+    )
+    parser.add_argument("--output-dir", type=Path, default=Path("out"), help="output directory")
+    parser.add_argument(
+        "--stem", default=None, help="stem of the output filename (defaults to the input name)"
+    )
 
-    layout = parser.add_argument_group("入力の並び")
-    layout.add_argument("--layout", choices=LAYOUTS, default="sbs", help="左右の入り方")
-    layout.add_argument("--swap-eyes", action="store_true", help="左右を入れ替える")
+    layout = parser.add_argument_group("input arrangement")
+    layout.add_argument(
+        "--layout", choices=LAYOUTS, default="sbs", help="how the eyes are arranged"
+    )
+    layout.add_argument("--swap-eyes", action="store_true", help="swap the eyes")
     layout.add_argument(
         "--projection",
         choices=PROJECTIONS,
         default="flat",
-        help="入力の写り方。fisheye は VR180 の魚眼を平面へ直してから視差を取る",
+        help="how the input was captured; fisheye flattens VR180 before estimating disparity",
     )
     layout.add_argument(
         "--fov",
         type=float,
         default=DEFAULT_FOV,
-        help="魚眼を平面へ直すときの水平視野角（度）。狭くするほど中央だけを使うので歪みが減る",
+        help="horizontal field of view in degrees when flattening fisheye;"
+        " narrower uses only the centre and distorts less",
     )
     layout.add_argument(
         "--fit",
         choices=FIT_MODES,
         default="crop",
-        help="タイルと縦横比が違うときの収め方。pad は余白を足し、crop は切り落とす",
+        help="how to fit an aspect ratio differing from the tile; pad adds margins, crop cuts",
     )
-    layout.add_argument("--start", type=int, default=0, help="開始フレーム番号")
-    layout.add_argument("--frames", type=int, default=None, help="処理するフレーム数")
+    layout.add_argument("--start", type=int, default=0, help="first frame number")
+    layout.add_argument("--frames", type=int, default=None, help="how many frames to process")
 
-    quilt = parser.add_argument_group("quilt のレイアウト")
-    quilt.add_argument("--display", choices=sorted(PRESETS), default="16", help="機種プリセット")
-    quilt.add_argument("--columns", type=int, default=None, help="列数（プリセットを上書き）")
-    quilt.add_argument("--rows", type=int, default=None, help="行数（プリセットを上書き）")
-    quilt.add_argument("--quilt-width", type=int, default=None, help="quilt 全体の幅")
-    quilt.add_argument("--quilt-height", type=int, default=None, help="quilt 全体の高さ")
-    quilt.add_argument("--aspect", type=float, default=None, help="タイル 1 枚の縦横比")
+    quilt = parser.add_argument_group("quilt layout")
+    quilt.add_argument("--display", choices=sorted(PRESETS), default="16", help="device preset")
+    quilt.add_argument("--columns", type=int, default=None, help="columns (overrides the preset)")
+    quilt.add_argument("--rows", type=int, default=None, help="rows (overrides the preset)")
+    quilt.add_argument("--quilt-width", type=int, default=None, help="width of the whole quilt")
+    quilt.add_argument("--quilt-height", type=int, default=None, help="height of the whole quilt")
+    quilt.add_argument("--aspect", type=float, default=None, help="aspect ratio of one tile")
 
-    views = parser.add_argument_group("視点合成")
+    views = parser.add_argument_group("view synthesis")
     views.add_argument(
         "--span",
         type=float,
         default=2.0,
-        help="視点の広がり。1.0 で左右カメラの間だけ、大きいほど外挿して視差が増える",
+        help="the view span; 1.0 spans the two cameras,"
+        " larger extrapolates and increases disparity",
     )
     views.add_argument(
         "--convergence",
         default="auto",
-        help="視差ゼロにする面の視差（画素）。auto は最初のフレームの中央値",
+        help="disparity of the zero-disparity plane in pixels;"
+        " auto takes the median of the first frame",
     )
-    views.add_argument("--crack-width", type=int, default=2, help="遮蔽と見なさない隙間の幅")
+    views.add_argument(
+        "--crack-width", type=int, default=2, help="width of a gap not treated as an occlusion"
+    )
     views.add_argument(
         "--consistency-tolerance",
         type=float,
         default=1.0,
-        help="遮蔽判定の視差の許容差。この差までは完全に採用し、2 倍で 0 になる",
+        help="disparity tolerance of the occlusion test;"
+        " accepted fully up to this, zero at twice it",
     )
-    views.add_argument("--inpaint-radius", type=int, default=3, help="穴埋めの参照半径")
+    views.add_argument(
+        "--inpaint-radius", type=int, default=3, help="reference radius for hole filling"
+    )
 
-    depth = parser.add_argument_group("視差推定")
+    depth = parser.add_argument_group("disparity estimation")
     depth.add_argument(
         "--max-disparity",
         type=int,
         default=128,
-        help="探索する視差の幅。16 の倍数で、quilt のタイル幅より小さくする",
+        help="width of the disparity search; a multiple of 16, below the quilt tile width",
     )
     depth.add_argument(
         "--min-disparity",
         type=int,
         default=-64,
-        help="探索する視差の下端。0 にすると画面より手前に出る面を見つけられない",
+        help="bottom of the disparity search; 0 cannot find surfaces in front of the screen",
     )
-    depth.add_argument("--block-size", type=int, default=5, help="マッチングの窓サイズ（奇数）")
-    depth.add_argument("--downscale", type=int, default=1, help="縮小して推定する倍率")
-    depth.add_argument("--wls-lambda", type=float, default=8000.0, help="WLS の平滑化の強さ")
-    depth.add_argument("--wls-sigma", type=float, default=1.5, help="WLS の色の効き")
+    depth.add_argument("--block-size", type=int, default=5, help="matching window size (odd)")
+    depth.add_argument("--downscale", type=int, default=1, help="downscale factor for estimation")
+    depth.add_argument("--wls-lambda", type=float, default=8000.0, help="WLS smoothing strength")
     depth.add_argument(
-        "--temporal-weight", type=float, default=0.35, help="今フレームの重み（小さいほど平滑）"
+        "--wls-sigma", type=float, default=1.5, help="how strongly WLS follows colour"
     )
     depth.add_argument(
-        "--temporal-threshold", type=float, default=4.0, help="この差を超えたら平滑化しない"
+        "--temporal-weight",
+        type=float,
+        default=0.35,
+        help="weight of the current frame (smaller is smoother)",
+    )
+    depth.add_argument(
+        "--temporal-threshold",
+        type=float,
+        default=4.0,
+        help="skip smoothing beyond this difference",
     )
 
-    output = parser.add_argument_group("書き出し")
-    output.add_argument("--crf", type=int, default=20, help="libx264 の CRF")
-    output.add_argument("--preset", default="slow", help="libx264 のプリセット")
-    output.add_argument("--no-audio", action="store_true", help="音声を引き継がない")
-    output.add_argument("--work-dir", type=Path, default=None, help="視差キャッシュの置き場所")
+    output = parser.add_argument_group("output")
+    output.add_argument("--crf", type=int, default=20, help="libx264 CRF")
+    output.add_argument("--preset", default="slow", help="libx264 preset")
+    output.add_argument("--no-audio", action="store_true", help="do not carry the audio over")
+    output.add_argument(
+        "--work-dir", type=Path, default=None, help="where to keep the disparity cache"
+    )
 
 
 def _options_from_args(args: argparse.Namespace) -> ConvertOptions:
@@ -190,7 +214,7 @@ def _convergence(value: str) -> float:
     try:
         return float(value)
     except ValueError as invalid:
-        raise ValueError(f"--convergence は数値か auto（受け取った値: {value}）") from invalid
+        raise ValueError(f"--convergence takes a number or auto (received: {value})") from invalid
 
 
 def _spec_from_args(args: argparse.Namespace) -> QuiltSpec:
@@ -208,4 +232,4 @@ def _spec_from_args(args: argparse.Namespace) -> QuiltSpec:
 def _write_png(path: Path, quilt: np.ndarray) -> None:
     # cv2.imwrite assumes BGR order, so passing rgb24 as is swaps the colours
     if not cv2.imwrite(str(path), cv2.cvtColor(quilt, cv2.COLOR_RGB2BGR)):
-        raise ValueError(f"{path} に書き出せなかった")
+        raise ValueError(f"could not write {path}")

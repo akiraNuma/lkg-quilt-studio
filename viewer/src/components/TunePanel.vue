@@ -14,7 +14,17 @@ const props = defineProps<{
   lastFrame: number
   /** The automatically chosen convergence, used to break down the baked value */
   baseConvergence: number | null
+  /** Whether a redraw is in flight, so the wait is visible next to the values that caused it */
+  rendering: boolean
+  /** Whether the picture is in its own window on the Looking Glass */
+  movedOut: boolean
+  /** Whether Bridge told us where that window goes */
+  bridged: boolean
+  /** Whether there is a picture to move */
+  canMove: boolean
 }>()
+
+const emit = defineEmits<{ moveOut: []; bringBack: [] }>()
 
 const shift = defineModel<number>('shift', { required: true })
 const singleView = defineModel<number>('singleView', {
@@ -44,6 +54,28 @@ const baked = computed(() => {
   <section class="panel">
     <h2><span class="step">3</span>{{ t('tune.title') }}</h2>
 
+    <!-- The same button as under the picture. Tuning is meant to happen on the device, and with
+         the button only under the picture that was not apparent -->
+    <div class="row">
+      <button v-if="movedOut" @click="emit('bringBack')">
+        {{ t('stage.bringBack') }}
+      </button>
+      <button
+        v-else
+        class="primary"
+        :disabled="!canMove"
+        @click="emit('moveOut')"
+      >
+        {{ t('stage.moveOut') }}
+      </button>
+      <span v-if="!bridged" class="note">{{
+        t('stage.needBridge')
+      }}</span>
+      <span v-else-if="canMove" class="note">
+        {{ t('tune.deviceHint') }}
+      </span>
+    </div>
+
     <ValueSlider
       v-if="mode === 'single'"
       v-model="singleView"
@@ -67,7 +99,14 @@ const baked = computed(() => {
     <p class="note">{{ t('tune.convergenceHint') }}</p>
     <p v-if="baked" class="note">{{ baked }}</p>
 
-    <p class="caption">{{ t('tune.redraw') }}</p>
+    <p class="caption">
+      <template v-if="rendering">
+        <span class="spinner" aria-hidden="true" />{{
+          t('stage.rendering')
+        }}
+      </template>
+      <template v-else>{{ t('tune.redraw') }}</template>
+    </p>
 
     <!--
       The ceiling is set by hole-filling quality, which no calculation decides. It is opened to

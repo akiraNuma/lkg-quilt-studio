@@ -6,6 +6,7 @@
 // calibration values is absent from the official documentation, and that implementation is the
 // only source (`.claude/rules/external-apis.md`).
 
+import { t } from './i18n'
 import { viewCount, type QuiltLayout } from './quilt'
 
 /** The calibration fields this conversion needs from Bridge's `getDisplays()`. */
@@ -36,7 +37,9 @@ export function lenticularParams(
   const { screenW, screenH, slope, DPI } = calibration
   if (screenW <= 0 || screenH <= 0 || DPI <= 0 || slope === 0) {
     throw new Error(
-      `キャリブレーション値が不正: screenW=${screenW} screenH=${screenH} DPI=${DPI} slope=${slope}`
+      t('lenticular.badCalibration', {
+        values: `screenW=${screenW} screenH=${screenH} DPI=${DPI} slope=${slope}`,
+      })
     )
   }
   return {
@@ -67,7 +70,10 @@ export function viewPortion(
 ): { u: number; v: number } {
   if (width < layout.columns || height < layout.rows) {
     throw new Error(
-      `quilt の解像度がタイル数より小さい: ${width}x${height} / ${layout.columns}x${layout.rows}`
+      t('lenticular.tooSmall', {
+        size: `${width}x${height}`,
+        tiles: `${layout.columns}x${layout.rows}`,
+      })
     )
   }
   return {

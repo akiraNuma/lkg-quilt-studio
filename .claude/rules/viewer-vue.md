@@ -78,7 +78,8 @@ For a key containing `{name}`, substitute it with `t('key', { name })`.
   “書き出すとここに並ぶ” was rejected.
 - **Do not store `t()` results in refs.** The text stays in the old language after a locale change.
   This happened with the preview's “N フレーム目” label. Derive text in a computed where it is displayed.
-- Conversion API error messages are Japanese text from the server. Do not translate them here.
+- Conversion API error messages arrive from the server in English and are shown as they are.
+  They do not pass through `i18n.ts`, so the Japanese UI shows them in English.
 
 ## When the dev server misses file changes
 

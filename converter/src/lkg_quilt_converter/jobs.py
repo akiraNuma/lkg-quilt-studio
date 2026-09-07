@@ -43,30 +43,27 @@ class ConvertRequest:
 
     def __post_init__(self) -> None:
         if self.layout not in LAYOUTS:
-            raise ValueError(
-                f"layout は {'/'.join(LAYOUTS)} のいずれか（受け取った値: {self.layout})"
-            )
+            raise ValueError(f"layout must be one of {'/'.join(LAYOUTS)} (received: {self.layout})")
         if self.display not in PRESETS:
             raise ValueError(
-                f"display は {'/'.join(sorted(PRESETS))} のいずれか（受け取った値: {self.display})"
+                f"display must be one of {'/'.join(sorted(PRESETS))} (received: {self.display})"
             )
         if self.projection not in PROJECTIONS:
             raise ValueError(
-                f"projection は {'/'.join(PROJECTIONS)} のいずれか"
-                f"（受け取った値: {self.projection})"
+                f"projection must be one of {'/'.join(PROJECTIONS)} (received: {self.projection})"
             )
         if not 0.0 < self.fov < 180.0:
-            raise ValueError(f"fov は 0 より大きく 180 未満（受け取った値: {self.fov}）")
+            raise ValueError(f"fov must be above 0 and below 180 (received: {self.fov})")
         if self.fit not in FIT_MODES:
-            raise ValueError(f"fit は {'/'.join(FIT_MODES)} のいずれか（受け取った値: {self.fit})")
+            raise ValueError(f"fit must be one of {'/'.join(FIT_MODES)} (received: {self.fit})")
         if self.layout == "separate":
-            raise ValueError("separate は動画 2 本が要るので、この画面からは扱えない")
+            raise ValueError("separate needs two videos, which this screen cannot handle")
         if self.span <= 0:
-            raise ValueError(f"span は正の数（受け取った値: {self.span}）")
+            raise ValueError(f"span must be positive (received: {self.span})")
         if self.start < 0:
-            raise ValueError(f"start は 0 以上（受け取った値: {self.start}）")
+            raise ValueError(f"start must be at least 0 (received: {self.start})")
         if self.frames is not None and self.frames < 1:
-            raise ValueError(f"frames は 1 以上（受け取った値: {self.frames}）")
+            raise ValueError(f"frames must be at least 1 (received: {self.frames})")
         self.convergence_value()
 
     def convergence_value(self) -> float:
@@ -77,7 +74,7 @@ class ConvertRequest:
             return float(self.convergence)
         except ValueError as invalid:
             raise ValueError(
-                f"convergence は数値か auto（受け取った値: {self.convergence}）"
+                f"convergence takes a number or auto (received: {self.convergence})"
             ) from invalid
 
     @property
@@ -253,7 +250,7 @@ class JobStore:
         try:
             source = self._sources.path(job.source_id)
             if source is None:
-                raise ValueError("入力の動画が見つからない（消されたか、サーバーを作り直した）")
+                raise ValueError("the input video is missing (deleted, or the server was rebuilt)")
             options = options_for(job.request, source, directory, stem=Path(job.source_name).stem)
             convert(options, progress=lambda done, total: self._progress(job.id, done, total))
             name = options.output.name
@@ -314,7 +311,7 @@ class JobStore:
             # State left behind by a crashed process. It cannot resume, so show it as failed and
             # write that back to the file (left as running, a later read would call it in flight)
             if job.status in ("queued", "running"):
-                self._write(replace(job, status="failed", error="サーバーの再起動で中断した"))
+                self._write(replace(job, status="failed", error="interrupted by a server restart"))
                 continue
             self._jobs[job.id] = job
 

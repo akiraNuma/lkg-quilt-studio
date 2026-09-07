@@ -16,17 +16,17 @@ repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 output=$repo/samples/bbb_stereo_tb.mp4
 
 if [ -f "$output" ]; then
-    echo "$output はすでにある。作り直すなら消してから実行する"
+    echo "$output already exists; delete it first to rebuild"
     exit 0
 fi
 
 work=$(mktemp -d "$repo/samples/.fetch.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 
-echo "1/3 先頭 $((PREFIX_BYTES / 1000000)) MB を取得する"
+echo "1/3 fetching the first $((PREFIX_BYTES / 1000000)) MB"
 curl -fL --progress-bar -r "0-$PREFIX_BYTES" "$ZIP_URL" -o "$work/prefix.zip"
 
-echo "2/3 zip の中の mp4 を展開する"
+echo "2/3 expanding the mp4 inside the zip"
 python3 - "$work/prefix.zip" "$work/head.mp4" <<'PY'
 import sys, zlib, pathlib
 
@@ -40,7 +40,7 @@ body = raw[30 + name_length + extra_length :]
 target.write_bytes(zlib.decompressobj(-zlib.MAX_WBITS).decompress(body))
 PY
 
-echo "3/3 ${CLIP_START} 秒から ${CLIP_SECONDS} 秒を切り出す"
+echo "3/3 cutting ${CLIP_SECONDS} seconds from ${CLIP_START}s"
 relative=${work#"$repo"/}
 docker compose --project-directory "$repo" run --rm --entrypoint ffmpeg converter \
     -hide_banner -v error \
@@ -50,5 +50,5 @@ docker compose --project-directory "$repo" run --rm --entrypoint ffmpeg converte
     -movflags +faststart -y "samples/$(basename "$output")"
 
 echo
-echo "できた: samples/$(basename "$output")（1920x2160 の上下並び・30 fps）"
-echo "変換する: docker compose run --rm converter convert samples/$(basename "$output") --layout tb --span 1.2 --output-dir out"
+echo "done: samples/$(basename "$output") (1920x2160 top-and-bottom, 30 fps)"
+echo "convert it: docker compose run --rm converter convert samples/$(basename "$output") --layout tb --span 1.2 --output-dir out"

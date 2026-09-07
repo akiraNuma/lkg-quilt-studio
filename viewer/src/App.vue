@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, useTemplateRef, watch } from 'vue'
 import DisplayPanel from './components/DisplayPanel.vue'
 import ExportPanel from './components/ExportPanel.vue'
 import LibraryPanel from './components/LibraryPanel.vue'
@@ -90,6 +90,10 @@ const mismatch = computed(() => {
   if (source.value === null || !quilt) return null
   return layoutMismatch(source.value.layout, quilt)
 })
+
+const stagePanel =
+  useTemplateRef<InstanceType<typeof StagePanel>>('stagePanel')
+const movedOut = computed(() => stagePanel.value?.movedOut === true)
 
 const windowRect = computed(() => {
   const target = display.value
@@ -211,6 +215,7 @@ function resetView(): void {
 
     <main>
       <StagePanel
+        ref="stagePanel"
         v-model:mode="mode"
         :source="source"
         :single-view="singleView"
@@ -260,6 +265,12 @@ function resetView(): void {
         :fisheye="fisheye"
         :last-frame="lastFrame"
         :base-convergence="baseConvergence"
+        :rendering="rendering"
+        :moved-out="movedOut"
+        :bridged="windowRect !== null"
+        :can-move="source !== null && windowRect !== null"
+        @move-out="stagePanel?.moveToDisplay()"
+        @bring-back="stagePanel?.bringBack()"
       />
 
       <div v-if="previewError" class="panel">

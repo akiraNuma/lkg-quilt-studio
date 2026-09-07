@@ -38,13 +38,13 @@ _sources: SourceStore | None = None
 
 def store() -> JobStore:
     if _store is None:
-        raise HTTPException(status_code=503, detail="サーバーの準備ができていない")
+        raise HTTPException(status_code=503, detail="the server is not ready")
     return _store
 
 
 def sources() -> SourceStore:
     if _sources is None:
-        raise HTTPException(status_code=503, detail="サーバーの準備ができていない")
+        raise HTTPException(status_code=503, detail="the server is not ready")
     return _sources
 
 
@@ -101,14 +101,14 @@ def list_sources() -> list[dict[str, Any]]:
 def delete_source(source_id: str) -> None:
     # A running job reads this video mid-conversion; deleting it fails the conversion
     if store().uses_source(source_id):
-        raise HTTPException(status_code=409, detail="変換中の素材は消せない")
+        raise HTTPException(status_code=409, detail="a source being converted cannot be deleted")
     if not sources().delete(source_id):
-        raise HTTPException(status_code=404, detail="その入力は無い")
+        raise HTTPException(status_code=404, detail="no such source")
 
 
 @app.post("/api/sources", status_code=201)
 async def create_source(
-    file: Annotated[UploadFile, File(description="ステレオ動画")],
+    file: Annotated[UploadFile, File(description="stereo video")],
 ) -> dict[str, Any]:
     """Upload a video once. Preview and conversion both refer to this id."""
     name = Path(file.filename or "input.mp4").name
@@ -120,18 +120,20 @@ async def create_source(
             spooled.write(chunk)
     if staged.stat().st_size == 0:
         staged.unlink(missing_ok=True)
-        raise HTTPException(status_code=422, detail="空のファイルが届いた")
+        raise HTTPException(status_code=422, detail="the uploaded file was empty")
     try:
         return _source_json(sources().add(name, staged))
     except (ValueError, FfmpegError, OSError) as invalid:
-        raise HTTPException(status_code=422, detail=f"動画として読めない: {invalid}") from invalid
+        raise HTTPException(
+            status_code=422, detail=f"not readable as video: {invalid}"
+        ) from invalid
 
 
 @app.get("/api/sources/{source_id}")
 def read_source(source_id: str) -> dict[str, Any]:
     source = sources().get(source_id)
     if source is None:
-        raise HTTPException(status_code=404, detail="その入力は無い")
+        raise HTTPException(status_code=404, detail="no such source")
     return _source_json(source)
 
 
@@ -157,7 +159,7 @@ def read_preview(
     path = sources().path(source_id)
     source = sources().get(source_id)
     if path is None or source is None:
-        raise HTTPException(status_code=404, detail="その入力は無い")
+        raise HTTPException(status_code=404, detail="no such source")
     request = _request(
         layout=layout,
         display=display,
@@ -178,7 +180,7 @@ def read_preview(
         ".jpg", cv2.cvtColor(quilt, cv2.COLOR_RGB2BGR), [cv2.IMWRITE_JPEG_QUALITY, PREVIEW_QUALITY]
     )
     if not ok:
-        raise HTTPException(status_code=500, detail="プレビューの書き出しに失敗した")
+        raise HTTPException(status_code=500, detail="failed to write the preview")
     return Response(
         content=encoded.tobytes(),
         media_type="image/jpeg",
@@ -206,7 +208,7 @@ def create_job(
 ) -> dict[str, Any]:
     source = sources().get(source_id)
     if source is None:
-        raise HTTPException(status_code=404, detail="その入力は無い")
+        raise HTTPException(status_code=404, detail="no such source")
     request = _request(
         layout=layout,
         display=display,
@@ -227,7 +229,7 @@ def create_job(
 def read_job(job_id: str) -> dict[str, Any]:
     job = store().get(job_id)
     if job is None:
-        raise HTTPException(status_code=404, detail="そのジョブは無い")
+        raise HTTPException(status_code=404, detail="no such job")
     return _as_json(job)
 
 
@@ -235,13 +237,13 @@ def read_job(job_id: str) -> dict[str, Any]:
 def cancel_job(job_id: str) -> None:
     """Stop a conversion. No partial video is left behind."""
     if not store().cancel(job_id):
-        raise HTTPException(status_code=409, detail="もう終わっているジョブは止められない")
+        raise HTTPException(status_code=409, detail="a finished job cannot be stopped")
 
 
 @app.delete("/api/jobs/{job_id}", status_code=204)
 def delete_job(job_id: str) -> None:
     if not store().delete(job_id):
-        raise HTTPException(status_code=409, detail="実行中か、もう無いジョブは消せない")
+        raise HTTPException(status_code=409, detail="a running or missing job cannot be deleted")
 
 
 # <video> players sometimes send HEAD. Serving only GET would answer 405
@@ -252,7 +254,7 @@ def read_result(job_id: str, filename: str) -> FileResponse:
     """
     path = store().result_path(job_id, filename)
     if path is None:
-        raise HTTPException(status_code=404, detail="その成果物は無い")
+        raise HTTPException(status_code=404, detail="no such output")
     return FileResponse(path, media_type="video/mp4", filename=filename)
 
 
@@ -266,7 +268,7 @@ def _request(**fields: Any) -> ConvertRequest:
 
 def _preview_error(failure: Exception) -> str:
     if isinstance(failure, StopIteration):
-        return "そのフレームは動画の範囲外"
+        return "that frame is outside the video"
     return str(failure) or failure.__class__.__name__
 
 
@@ -339,7 +341,7 @@ def _as_json(job: Job) -> dict[str, Any]:
 def run() -> None:
     """Entry point for `lkg-quilt-api`."""
     if shutil.which("ffmpeg") is None:
-        raise SystemExit("ffmpeg が見つからない。変換 API は ffmpeg が無いと動かない")
+        raise SystemExit("ffmpeg not found; the conversion API cannot run without it")
     JOBS_DIR.mkdir(parents=True, exist_ok=True)
     uvicorn.run(
         app,

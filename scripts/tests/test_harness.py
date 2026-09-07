@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[2]
 def module(name: str, path: str) -> ModuleType:
     spec = importlib.util.spec_from_file_location(name, ROOT / path)
     if spec is None or spec.loader is None:
-        raise AssertionError(f"{path} を読み込めない")
+        raise AssertionError(f"cannot load {path}")
     loaded = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(loaded)
     return loaded

@@ -28,7 +28,7 @@ class FfmpegError(RuntimeError):
 def _binary(name: str) -> str:
     found = shutil.which(name)
     if found is None:
-        raise FfmpegError(f"{name} が見つからない。ffmpeg を入れて PATH に通す")
+        raise FfmpegError(f"{name} not found; install ffmpeg and put it on PATH")
     return found
 
 
@@ -58,26 +58,26 @@ def probe(path: Path) -> VideoInfo:
     ]
     completed = subprocess.run(command, capture_output=True, text=True)
     if completed.returncode != 0:
-        raise FfmpegError(f"{path} を ffprobe で読めない: {completed.stderr.strip()}")
+        raise FfmpegError(f"ffprobe cannot read {path}: {completed.stderr.strip()}")
     probed = json.loads(completed.stdout)
     streams = probed.get("streams", [])
     video = next((s for s in streams if s.get("codec_type") == "video"), None)
     if video is None:
-        raise FfmpegError(f"{path} に映像ストリームが無い")
+        raise FfmpegError(f"{path} has no video stream")
 
     fps = Fraction(video.get("avg_frame_rate") or "0/1")
     if fps <= 0:
         fps = Fraction(video.get("r_frame_rate") or "0/1")
     if fps <= 0:
-        raise FfmpegError(f"{path} のフレームレートを判定できない")
+        raise FfmpegError(f"cannot determine the frame rate of {path}")
 
     rotation = _rotation(video)
     if rotation:
         raise FfmpegError(
-            f"{path} に {rotation} 度の回転メタデータがある。左右の視差が縦方向になって"
-            "推定できないので、回転を焼き込んでから渡す"
-            "（例: ffmpeg -i in.mp4 -c:v libx264 out.mp4。再エンコードで回転が適用され、"
-            "メタデータは落ちる）"
+            f"{path} carries {rotation} degrees of rotation metadata. That turns the stereo"
+            " disparity vertical and it cannot be estimated, so bake the rotation in first"
+            " (for example ffmpeg -i in.mp4 -c:v libx264 out.mp4, which applies the rotation on"
+            " re-encode and drops the metadata)"
         )
 
     return VideoInfo(
@@ -128,9 +128,9 @@ def _frame_count(video: dict[str, object], container: dict[str, object], fps: Fr
 def read_frames(info: VideoInfo, *, start: int = 0, count: int | None = None) -> Generator[Frame]:
     """Yield rgb24 frames in order. The range is given in frame numbers."""
     if start < 0:
-        raise ValueError(f"start は 0 以上（受け取った値: {start}）")
+        raise ValueError(f"start must be at least 0 (received: {start})")
     if count is not None and count <= 0:
-        raise ValueError(f"count は 1 以上（受け取った値: {count}）")
+        raise ValueError(f"count must be at least 1 (received: {count})")
 
     command = [
         _binary("ffmpeg"),
@@ -167,7 +167,7 @@ def read_frames(info: VideoInfo, *, start: int = 0, count: int | None = None) ->
                     break
                 if len(raw) != frame_bytes:
                     raise FfmpegError(
-                        f"{info.path} のフレームが途中で切れた（{len(raw)} / {frame_bytes} バイト）"
+                        f"a frame of {info.path} was cut short ({len(raw)} / {frame_bytes} bytes)"
                     )
                 yield np.frombuffer(raw, dtype=np.uint8).reshape(info.height, info.width, 3)
         finally:
@@ -176,7 +176,7 @@ def read_frames(info: VideoInfo, *, start: int = 0, count: int | None = None) ->
             errors.seek(0)
             message = errors.read().decode("utf-8", "replace").strip()
         if returncode != 0:
-            raise FfmpegError(f"{info.path} の読み込みに失敗した: {message}")
+            raise FfmpegError(f"failed to read {info.path}: {message}")
 
 
 def mux_audio(video: Path, source: Path, output: Path, *, start: float, duration: float) -> None:
@@ -217,7 +217,7 @@ def mux_audio(video: Path, source: Path, output: Path, *, start: float, duration
     ]
     completed = subprocess.run(command, capture_output=True, text=True)
     if completed.returncode != 0:
-        raise FfmpegError(f"音声を重ねられなかった: {_first_line(completed.stderr)}")
+        raise FfmpegError(f"could not mux the audio: {_first_line(completed.stderr)}")
 
 
 def _first_line(message: str) -> str:
@@ -233,7 +233,7 @@ def _first_line(message: str) -> str:
         if stripped.startswith("[") and "] " in stripped:
             return stripped.split("] ", 1)[1]
         return stripped
-    return "（ffmpeg は理由を出さなかった）"
+    return "(ffmpeg gave no reason)"
 
 
 X264_PARAMS = "rc-lookahead=10:sliced-threads=1"
@@ -266,7 +266,7 @@ class QuiltEncoder:
         faststart: bool = True,
     ) -> None:
         if width % 2 or height % 2:
-            raise ValueError(f"yuv420p は偶数の解像度が必要（{width}x{height}）")
+            raise ValueError(f"yuv420p requires an even resolution ({width}x{height})")
         self._path = path
         self._frame_bytes = width * height * 3
         self._frames = 0
@@ -316,12 +316,12 @@ class QuiltEncoder:
         # tobytes() would copy 50 MB per frame at 4092 squared; a contiguous array is passed as is
         data = frame if frame.flags["C_CONTIGUOUS"] else np.ascontiguousarray(frame)
         if data.nbytes != self._frame_bytes:
-            raise ValueError(f"quilt の大きさが違う（{data.nbytes} / {self._frame_bytes} バイト）")
+            raise ValueError(f"wrong quilt size ({data.nbytes} / {self._frame_bytes} bytes)")
         try:
             stdin.write(data.data)
         except BrokenPipeError as broken:
             # The path can be a temporary file, so it is not reported
-            raise FfmpegError(f"quilt の書き込み中に ffmpeg が落ちた: {self._stderr()}") from broken
+            raise FfmpegError(f"ffmpeg died while writing the quilt: {self._stderr()}") from broken
         self._frames += 1
 
     def close(self) -> None:
@@ -334,14 +334,13 @@ class QuiltEncoder:
         self._errors.close()
         if returncode != 0:
             # The path can be a temporary file, so it is not reported
-            raise FfmpegError(f"quilt の書き出しに失敗した: {_first_line(message)}")
+            raise FfmpegError(f"failed to write the quilt: {_first_line(message)}")
         if self._frames == 0:
             # Do not leave an empty mp4 behind as a success (happens when --start is out of range)
             self._path.unlink(missing_ok=True)
             # The path can be a temporary file, so it is not reported
             raise FfmpegError(
-                "書き出すフレームが 1 枚も無かった。"
-                "--start / --frames が入力の範囲に収まっているか確かめる"
+                "no frames were written. Check that --start / --frames fall inside the input"
             )
 
     def _stderr(self) -> str:

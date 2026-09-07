@@ -1,4 +1,4 @@
-// 画面の文言の正本。書き方の規約は `.claude/rules/viewer-vue.md`。
+// The authority for on-screen text. Writing conventions are in `.claude/rules/viewer-vue.md`.
 
 import { ref, watchEffect } from 'vue'
 
@@ -55,6 +55,7 @@ const ja = {
     '収束面は画面と同じ奥行きに見える面。＋で手前へ、−で奥へ動く',
   'tune.baked':
     '書き出しに入る収束面 {total} px（自動 {base} ＋ 手動 {shift}）',
+  'tune.deviceHint': '実機に映したまま、下の値を動かして詰められる',
   'tune.redraw': 'ここから下は動かすと描き直す',
   'tune.span': '立体の強さ',
   'tune.fov': '視野角',
@@ -136,6 +137,11 @@ const ja = {
   'quilt.mismatchAspect':
     'タイルの縦横比が違う（動画 {video} / 機種 {display}）',
 
+  'lenticular.badCalibration':
+    'キャリブレーション値が不正（{values}）',
+  'lenticular.tooSmall':
+    'quilt の解像度がタイル数より小さい（quilt {size} / タイル {tiles}）',
+
   'bridge.unavailable':
     'Bridge に接続できない。Looking Glass Bridge を起動して再試行する',
   'bridge.loadFailed': 'Bridge の読み込みに失敗した: {error}',
@@ -198,6 +204,8 @@ const en: Record<MessageKey, string> = {
     'The convergence plane sits at screen depth. + pulls the subject forward, − pushes it back.',
   'tune.baked':
     'Convergence written into the export: {total} px (auto {base} + manual {shift})',
+  'tune.deviceHint':
+    'Keep it on the device while you tune the values below.',
   'tune.redraw': 'Changing anything below redraws the frame',
   'tune.span': 'Depth strength',
   'tune.fov': 'Field of view',
@@ -280,6 +288,11 @@ const en: Record<MessageKey, string> = {
   'quilt.mismatchAspect':
     'Tile aspect ratios differ (video {video} / device {display})',
 
+  'lenticular.badCalibration':
+    'Invalid calibration values ({values})',
+  'lenticular.tooSmall':
+    'The quilt resolution is smaller than the tile count (quilt {size} / tiles {tiles})',
+
   'bridge.unavailable':
     'Cannot reach Bridge. Start Looking Glass Bridge and try again.',
   'bridge.loadFailed': 'Failed to load Bridge: {error}',
@@ -309,11 +322,11 @@ export function setLocale(next: Locale): void {
   try {
     localStorage.setItem(STORAGE_KEY, next)
   } catch {
-    // プライベートウィンドウでは書けない。切り替え自体は効くので黙って進む
+    // A private window cannot write; the switch itself still works, so move on silently
   }
 }
 
-/** 文言を引く。`{name}` は `params` の値で埋める。 */
+/** Look up a message. `{name}` is filled from `params`. */
 export function t(
   key: MessageKey,
   params?: Record<string, string | number>
@@ -325,13 +338,13 @@ export function t(
   )
 }
 
-/** 保存した設定 → ブラウザの言語 → 日本語の順で決める。 */
+/** Saved choice, then the browser language, then Japanese. */
 function initial(): Locale {
   try {
     const saved = localStorage.getItem(STORAGE_KEY)
     if (isLocale(saved)) return saved
   } catch {
-    // localStorage が無い（テストや制限モード）だけなので、次の手段へ落ちる
+    // localStorage is merely absent (tests, restricted modes), so fall through to the next source
   }
   const preferred =
     typeof navigator === 'undefined' ? undefined : navigator.language
@@ -344,7 +357,7 @@ function isLocale(value: string | null): value is Locale {
   return LOCALES.includes(value as Locale)
 }
 
-// <html lang> を合わせる。フォントの選択と読み上げがこれを見る
+// Keep <html lang> in step: font selection and screen readers read it
 if (typeof document !== 'undefined') {
   watchEffect(() => (document.documentElement.lang = locale.value))
 }

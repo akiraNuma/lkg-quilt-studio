@@ -24,9 +24,9 @@ def fill_horizontal(
     across the region and dissolves the outline.
     """
     if values.shape != valid.shape:
-        raise ValueError(f"形が違う: values={values.shape} valid={valid.shape}")
+        raise ValueError(f"shapes differ: values={values.shape} valid={valid.shape}")
     if max_gap < 0:
-        raise ValueError(f"max_gap は 0 以上（受け取った値: {max_gap}）")
+        raise ValueError(f"max_gap must be at least 0 (received: {max_gap})")
 
     width = values.shape[1]
     columns = np.arange(width, dtype=np.int64)

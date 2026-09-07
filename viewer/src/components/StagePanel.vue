@@ -56,6 +56,9 @@ const stageError = ref<string | null>(null)
 // A person can close the window directly, so read the owning QuiltStage's state as is
 const movedOut = computed(() => stage.value?.poppedOut === true)
 
+// The Tune panel shows the same button next to the values, so it drives the stage from here
+defineExpose({ movedOut, moveToDisplay, bringBack })
+
 // A redraw or a new source can fix it; keeping the previous failure leaves red text behind
 watch(
   () => props.source,
@@ -90,7 +93,11 @@ function bringBack(): void {
         :calibration="calibration"
         @error="stageError = $event"
       />
-      <p v-if="rendering" class="badge">{{ t('stage.rendering') }}</p>
+      <p v-if="rendering" class="badge">
+        <span class="spinner" aria-hidden="true" />{{
+          t('stage.rendering')
+        }}
+      </p>
     </div>
 
     <div v-if="source" class="toolbar">
@@ -114,9 +121,6 @@ function bringBack(): void {
       <button v-else @click="bringBack">
         {{ t('stage.bringBack') }}
       </button>
-      <span v-if="!movedOut && windowRect === null" class="note">
-        {{ t('stage.needBridge') }}
-      </span>
     </div>
 
     <p v-if="source" class="note">
@@ -166,11 +170,14 @@ function bringBack(): void {
   color: var(--muted);
 }
 
+/* Centred, so it sits on the picture and not in the empty space beside a portrait tile */
 .badge {
   position: absolute;
   top: 0.5rem;
-  left: 0.5rem;
+  left: 50%;
+  transform: translateX(-50%);
   margin: 0;
+  white-space: nowrap;
   padding: 0.15rem 0.55rem;
   border-radius: 999px;
   background: var(--overlay);

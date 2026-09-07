@@ -61,7 +61,7 @@ class FisheyeCircle:
 
     def __post_init__(self) -> None:
         if self.radius <= 0:
-            raise ValueError(f"radius は正の数（受け取った値: {self.radius}）")
+            raise ValueError(f"radius must be positive (received: {self.radius})")
 
 
 def detect_circle(images: Sequence[Frame]) -> FisheyeCircle | None:
@@ -119,11 +119,11 @@ def rectilinear_maps(
     """
     tile_width, tile_height = tile_size
     if tile_width < 1 or tile_height < 1:
-        raise ValueError(f"タイルの大きさが不正（{tile_width}x{tile_height}）")
+        raise ValueError(f"invalid tile size ({tile_width}x{tile_height})")
     if tile_aspect <= 0:
-        raise ValueError(f"tile_aspect は正の数（受け取った値: {tile_aspect}）")
+        raise ValueError(f"tile_aspect must be positive (received: {tile_aspect})")
     if not 0.0 < fov < source_fov:
-        raise ValueError(f"fov は 0 より大きく {source_fov} 未満（受け取った値: {fov}）")
+        raise ValueError(f"fov must be above 0 and below {source_fov} (received: {fov})")
 
     # One pixel's displayed width / height. Lengths below are in units of "vertical pixels"
     pixel_aspect = tile_aspect / (tile_width / tile_height)
@@ -138,8 +138,9 @@ def rectilinear_maps(
     limit = math.radians(source_fov) / 2.0
     if float(theta.max()) > limit:
         raise ValueError(
-            f"視野角 {fov}° ではタイルの隅が魚眼の外（{math.degrees(float(theta.max())):.0f}° > "
-            f"{source_fov / 2:.0f}°）を指す。fov を下げる"
+            f"at a field of view of {fov} degrees the tile corner points outside the fisheye"
+            f" ({math.degrees(float(theta.max())):.0f} > {source_fov / 2:.0f} degrees)."
+            " Lower fov"
         )
 
     rho = circle.radius * theta / limit

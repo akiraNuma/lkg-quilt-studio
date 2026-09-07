@@ -115,7 +115,7 @@ def convert(options: ConvertOptions, *, progress: ProgressCallback | None = None
             # Never discard finished video. Discarding it means redoing every frame
             options.output.unlink(missing_ok=True)
             video_only.replace(options.output)
-            print(f"\n警告: {failure}。映像だけを残す", file=sys.stderr)
+            print(f"\nwarning: {failure}. keeping the video only", file=sys.stderr)
     _report_done(options.output)
     return options.output
 
@@ -337,7 +337,8 @@ def _detect_circles(
     circles = (detect_circle(lefts), detect_circle(rights))
     if circles[0] is None or circles[1] is None:
         raise ValueError(
-            "魚眼の円が見つからない（黒い縁が無い）。入力が魚眼でないなら投影を flat にする"
+            "no fisheye circle found (there is no black border);"
+            " set the projection to flat if the input is not fisheye"
         )
     return (circles[0], circles[1])
 
@@ -365,7 +366,9 @@ class _DisparityCache:
         }
         marker = directory / "settings.json"
         if marker.exists() and json.loads(marker.read_text()) != signature:
-            print(f"設定が変わったので {directory} の視差キャッシュを作り直す", file=sys.stderr)
+            print(
+                f"settings changed, rebuilding the disparity cache in {directory}", file=sys.stderr
+            )
             for stale in directory.glob("*.npy"):
                 stale.unlink()
         marker.write_text(json.dumps(signature, ensure_ascii=False, indent=2))
@@ -403,19 +406,22 @@ def _report_fit(fit: TileFit) -> None:
     content_width, content_height = fit.content_size
     tile_width, tile_height = fit.tile_size
     print(
-        f"タイル {tile_width}x{tile_height} px に {content_width}x{content_height} px で収める"
-        "（縦横比が違うので余白が入る。切り落として画面いっぱいに使うなら --fit crop）",
+        f"fitting {content_width}x{content_height} px into a {tile_width}x{tile_height} px tile"
+        " (the aspect ratios differ, so padding is added;"
+        " use --fit crop to cut instead and fill the screen)",
         file=sys.stderr,
     )
 
 
 def _report_circles(circles: tuple[FisheyeCircle, FisheyeCircle], fov: float) -> None:
     def describe(circle: FisheyeCircle) -> str:
-        return f"中心 ({circle.center_x:.1f}, {circle.center_y:.1f}) 半径 {circle.radius:.1f} px"
+        return (
+            f"centre ({circle.center_x:.1f}, {circle.center_y:.1f}) radius {circle.radius:.1f} px"
+        )
 
     print(
-        f"魚眼として読む: 左 {describe(circles[0])} / 右 {describe(circles[1])} / "
-        f"水平視野角 {fov:.0f}°",
+        f"reading as fisheye: left {describe(circles[0])} / right {describe(circles[1])} /"
+        f" horizontal field of view {fov:.0f} degrees",
         file=sys.stderr,
     )
 
@@ -429,9 +435,9 @@ def _report_disparity(left: Frame, right: Frame, disparity: DisparityMap) -> Non
     """
     low, high = np.percentile(disparity, (10, 90))
     print(
-        f"視差: 中央値 {float(np.median(disparity)):.2f} px / "
-        f"10〜90 パーセンタイル {float(low):.2f}〜{float(high):.2f} px / "
-        f"測光残差 {photometric_residual(left, right, disparity):.2f}",
+        f"disparity: median {float(np.median(disparity)):.2f} px /"
+        f" 10th-90th percentile {float(low):.2f} to {float(high):.2f} px /"
+        f" photometric residual {photometric_residual(left, right, disparity):.2f}",
         file=sys.stderr,
     )
 
@@ -440,17 +446,18 @@ def _open_sources(options: ConvertOptions) -> list[VideoInfo]:
     left = probe(options.source)
     if options.layout != "separate":
         if options.right_source is not None:
-            raise ValueError(f"layout={options.layout} では右眼の動画を別に渡せない")
+            raise ValueError(f"layout={options.layout} takes no separate right-eye video")
         return [left]
     if options.right_source is None:
-        raise ValueError("layout=separate では右眼の動画（--right）が必要")
+        raise ValueError("layout=separate requires the right-eye video (--right)")
     right = probe(options.right_source)
     if (left.width, left.height) != (right.width, right.height):
         raise ValueError(
-            f"左右の解像度が違う: {left.width}x{left.height} / {right.width}x{right.height}"
+            f"the eyes have different resolutions:"
+            f" {left.width}x{left.height} / {right.width}x{right.height}"
         )
     if left.fps != right.fps:
-        raise ValueError(f"左右のフレームレートが違う: {left.fps} / {right.fps}")
+        raise ValueError(f"the eyes have different frame rates: {left.fps} / {right.fps}")
     return [left, right]
 
 
@@ -468,8 +475,8 @@ def _planned_frames(info: VideoInfo, options: ConvertOptions) -> int:
 
 def _report(done: int, total: int) -> None:
     goal = str(total) if total else "?"
-    print(f"\r{done} / {goal} フレーム", end="", file=sys.stderr, flush=True)
+    print(f"\r{done} / {goal} frames", end="", file=sys.stderr, flush=True)
 
 
 def _report_done(output: Path) -> None:
-    print(f"\n{output} を書き出した", file=sys.stderr)
+    print(f"\nwrote {output}", file=sys.stderr)

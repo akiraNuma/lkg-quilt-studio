@@ -33,11 +33,13 @@ class SynthesisParams:
 
     def __post_init__(self) -> None:
         if self.crack_width < 0:
-            raise ValueError(f"crack_width は 0 以上（受け取った値: {self.crack_width}）")
+            raise ValueError(f"crack_width must be at least 0 (received: {self.crack_width})")
         if self.inpaint_radius < 1:
-            raise ValueError(f"inpaint_radius は 1 以上（受け取った値: {self.inpaint_radius}）")
+            raise ValueError(f"inpaint_radius must be at least 1 (received: {self.inpaint_radius})")
         if self.tolerance_ratio < 0:
-            raise ValueError(f"tolerance_ratio は 0 以上（受け取った値: {self.tolerance_ratio}）")
+            raise ValueError(
+                f"tolerance_ratio must be at least 0 (received: {self.tolerance_ratio})"
+            )
 
 
 MINIMUM_AGREEMENT = 0.05
@@ -57,9 +59,9 @@ def view_positions(view_count: int, span: float) -> list[float]:
     extrapolates, but widening it grows the area that must be hole-filled and costs quality.
     """
     if view_count < 1:
-        raise ValueError(f"view_count は 1 以上（受け取った値: {view_count}）")
+        raise ValueError(f"view_count must be at least 1 (received: {view_count})")
     if span <= 0:
-        raise ValueError(f"span は正の数（受け取った値: {span}）")
+        raise ValueError(f"span must be positive (received: {span})")
     if view_count == 1:
         return [0.5]
     return [0.5 + span * (index / (view_count - 1) - 0.5) for index in range(view_count)]
@@ -106,9 +108,13 @@ class ViewSynthesizer:
         self, left: Frame, right: Frame, disparity: DisparityMap, params: SynthesisParams
     ) -> None:
         if left.shape != right.shape:
-            raise ValueError(f"左右の形が違う: left={left.shape} right={right.shape}")
+            raise ValueError(
+                f"the eyes have different shapes: left={left.shape} right={right.shape}"
+            )
         if disparity.shape != left.shape[:2]:
-            raise ValueError(f"視差の形が画像と違う: {disparity.shape} vs {left.shape[:2]}")
+            raise ValueError(
+                f"disparity shape differs from the image: {disparity.shape} vs {left.shape[:2]}"
+            )
         self._left = left
         self._right = right
         self._params = params

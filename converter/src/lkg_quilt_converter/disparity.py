@@ -46,20 +46,22 @@ class DisparityParams:
         # SGBM raises unless numDisparities is a multiple of 16
         if self.max_disparity <= 0 or self.max_disparity % 16:
             raise ValueError(
-                f"max_disparity は 16 の倍数の正数（受け取った値: {self.max_disparity}）"
+                f"max_disparity must be a positive multiple of 16 (received: {self.max_disparity})"
             )
         if self.block_size < 1 or self.block_size % 2 == 0:
-            raise ValueError(f"block_size は奇数の正数（受け取った値: {self.block_size}）")
+            raise ValueError(
+                f"block_size must be a positive odd number (received: {self.block_size})"
+            )
         if self.min_disparity + self.max_disparity <= 0:
             raise ValueError(
-                "探索範囲の上端が 0 以下で手前の面が見つからない"
-                f"（min_disparity={self.min_disparity} max_disparity={self.max_disparity}）"
+                "the top of the search range is at or below 0, so nearer surfaces cannot be found"
+                f" (min_disparity={self.min_disparity} max_disparity={self.max_disparity})"
             )
         if self.downscale < 1:
-            raise ValueError(f"downscale は 1 以上（受け取った値: {self.downscale}）")
+            raise ValueError(f"downscale must be at least 1 (received: {self.downscale})")
         if not 0.0 < self.temporal_weight <= 1.0:
             raise ValueError(
-                f"temporal_weight は 0 より大きく 1 以下（受け取った値: {self.temporal_weight}）"
+                f"temporal_weight must be above 0 and at most 1 (received: {self.temporal_weight})"
             )
 
 
@@ -92,7 +94,7 @@ def blend_temporal(
     if previous is None:
         return current
     if previous.shape != current.shape:
-        raise ValueError(f"形が違う: current={current.shape} previous={previous.shape}")
+        raise ValueError(f"shapes differ: current={current.shape} previous={previous.shape}")
     smoothed = weight * current + (1.0 - weight) * previous
     moved = np.abs(current - previous) > threshold
     return np.where(moved, current, smoothed).astype(np.float32)
@@ -132,7 +134,9 @@ class SgbmDisparityEstimator:
 
     def estimate(self, left: Frame, right: Frame) -> DisparityMap:
         if left.shape != right.shape:
-            raise ValueError(f"左右の形が違う: left={left.shape} right={right.shape}")
+            raise ValueError(
+                f"the eyes have different shapes: left={left.shape} right={right.shape}"
+            )
         scale = self._params.downscale
         # When the search range approaches the image width, SGBM asks for an enormous internal
         # buffer and fails with cv2.error (Insufficient memory). Fail earlier, with the reason
@@ -140,9 +144,9 @@ class SgbmDisparityEstimator:
         usable_width = max(left.shape[1] // scale, 1)
         if search >= usable_width:
             raise ValueError(
-                f"視差の探索範囲 {search} px がタイル幅 {usable_width} px 以上で、"
-                "ステレオマッチングが動かない。"
-                "--max-disparity を下げるか quilt の解像度を上げる"
+                f"the disparity search range of {search} px reaches the tile width of"
+                f" {usable_width} px, so stereo matching cannot run."
+                " Lower --max-disparity or raise the quilt resolution"
             )
         small_left = _to_gray(left, scale)
         small_right = _to_gray(right, scale)

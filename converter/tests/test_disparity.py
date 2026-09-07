@@ -84,7 +84,7 @@ def test_search_range_wider_than_the_tile_is_rejected() -> None:
     """
     estimator = SgbmDisparityEstimator(DisparityParams(max_disparity=128))
     narrow = np.zeros((32, 64, 3), dtype=np.uint8)
-    with pytest.raises(ValueError, match="探索範囲"):
+    with pytest.raises(ValueError, match="search range"):
         estimator.estimate(narrow, narrow)
 
 

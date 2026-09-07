@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parent.parent
 def permission_rules(permissions: dict[str, list[str]]) -> str:
     unknown = set(permissions) - {"allow", "deny", "ask"}
     if unknown:
-        raise ValueError(f"未対応の権限設定: {sorted(unknown)}")
+        raise ValueError(f"unsupported permission keys: {sorted(unknown)}")
     lines = ["# Generated from .claude/settings.json. Run python3 scripts/sync-harness.py."]
     for key, decision in [("allow", "allow"), ("ask", "prompt"), ("deny", "forbidden")]:
         entries = permissions.get(key, [])
@@ -21,7 +21,10 @@ def permission_rules(permissions: dict[str, list[str]]) -> str:
         for entry in entries:
             match = re.fullmatch(r"Bash\(([a-zA-Z0-9_./-]+(?: [a-zA-Z0-9_./-]+)*):\*\)", entry)
             if not match:
-                raise ValueError(f"自動変換できない権限: {entry} (黙って省略しない)")
+                raise ValueError(
+                    f"permission that cannot be converted automatically: {entry}"
+                    " (never skip one silently)"
+                )
             pattern = json.dumps(match[1].split())
             lines.append(f'prefix_rule(pattern={pattern}, decision="{decision}")')
     return "\n".join(lines) + "\n"
@@ -34,17 +37,17 @@ def main() -> None:
     settings = json.loads((ROOT / ".claude/settings.json").read_text())
     unknown = set(settings) - {"permissions", "hooks"}
     if unknown:
-        raise ValueError(f"Codex 対応の確認が必要な設定: {sorted(unknown)}")
+        raise ValueError(f"settings whose Codex support needs checking: {sorted(unknown)}")
     hooks = settings.get("hooks", {})
     for event, groups in hooks.items():
         if event not in {"SessionStart", "PreToolUse", "PostToolUse"}:
-            raise ValueError(f"未検証の hook event: {event}")
+            raise ValueError(f"unverified hook event: {event}")
         for group in groups:
             for handler in group["hooks"]:
                 if handler.get("type") != "command":
-                    raise ValueError("command 以外の hook は対応確認が必要")
+                    raise ValueError("a hook other than command needs its support checked")
                 if "CLAUDE_PROJECT_DIR" in handler["command"]:
-                    raise ValueError("共通 hook command は git root から解決すること")
+                    raise ValueError("a shared hook command must resolve from the git root")
     outputs = {
         ROOT / ".codex/hooks.json": json.dumps({"hooks": hooks}, indent=2, ensure_ascii=False)
         + "\n",
@@ -61,7 +64,7 @@ def main() -> None:
             path.write_text(expected)
     if drift:
         missing = ", ".join(drift)
-        raise ValueError(f"同期漏れ: {missing}。python3 scripts/sync-harness.py を実行する")
+        raise ValueError(f"out of sync: {missing}. run python3 scripts/sync-harness.py")
     print("harness adapters OK" if args.check else "harness adapters synced")
 
 
