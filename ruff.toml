@@ -1,0 +1,8 @@
+# scripts/ 用の ruff 設定。converter/ の外なので converter/pyproject.toml が掛からない。
+# 規約の正本はあちら側なので、こちらは extend で引き込んで差分だけ書く。
+extend = "converter/pyproject.toml"
+
+[lint.isort]
+# scripts/ から見た lkg_quilt_converter は「入れてあるパッケージ」。converter/ 側は
+# src レイアウトなので同じ名前が first-party になり、指定しないと並び順が食い違う
+known-third-party = ["lkg_quilt_converter"]

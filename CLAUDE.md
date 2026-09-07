@@ -1,225 +1,230 @@
 # CLAUDE.md
 
-## プロジェクト概要
+This English document is authoritative. [README.ja.md](README.ja.md) is the only translated document.
 
-ステレオ動画（左右 2 視点）を Looking Glass 用の **quilt 動画**に変換し、ブラウザで再生するツール。
-変換は事前レンダリング（バッチ処理）で行う。
+## Project overview
 
-処理の流れ:
+Convert stereo video (two views, left and right) into **quilt video** for Looking Glass and play it in a browser.
+Conversion runs as an offline rendering batch.
 
-1. ステレオ動画から視差（深度）を推定する
-2. 深度を使って中間・外挿視点を合成する（DIBR: Depth Image Based Rendering）
-3. 合成した視点群を quilt にレイアウトし、動画としてエンコードする
-4. ブラウザで quilt 動画を Looking Glass に表示する
+Pipeline:
 
-セットアップと使い方は [README.md](README.md) が正本。
+1. Estimate disparity (depth) from stereo video.
+2. Synthesize intermediate and extrapolated views using depth (DIBR: Depth Image Based Rendering).
+3. Arrange the synthesized views into a quilt and encode it as video.
+4. Display the quilt video on a Looking Glass through the browser.
 
-## 構成
+[README.md](README.md) is the source of truth for setup and usage.
 
-| ディレクトリ | 役割 | スタック |
+## Structure
+
+| Directory | Responsibility | Stack |
 | --- | --- | --- |
-| `converter/` | 変換（手順 1〜3）。CLI と HTTP API の 2 入口 | Python + uv, FastAPI |
-| `viewer/` | 再生 Web アプリ（手順 4）と変換の依頼 | Vue 3 + Vite |
+| `converter/` | Conversion (steps 1–3), with CLI and HTTP API entry points | Python + uv, FastAPI |
+| `viewer/` | Playback web app (step 4) and conversion requests | Vue 3 + Vite |
 
-node と uv のバージョンは `.mise.toml` が正本。**Python 本体は uv が管理する**
-（理由は `.claude/rules/converter-python.md`）。
+`.mise.toml` is the source of truth for node and uv versions. **uv manages Python itself**
+(see `.claude/rules/converter-python.md` for the reason).
 
-実行経路は 2 つある。Docker は `compose.yaml` が正本、ローカルは `.mise.toml` が正本。
-**Docker のイメージは実行専用で、lint とテストの道具を入れていない**（下の検証フローは
-ローカル側の経路で走らせる）。
+There are two execution paths: `compose.yaml` defines Docker execution; `.mise.toml` defines local execution.
+**Docker images are for running the application and contain no lint or test tools.**
+Run the validation workflow below through the local path.
 
-## 行動原則
+## Working principles
 
-- コードは人間が読む前提で書く。触ったファイルの可読性リファクタ（構造の整理・自然なモジュール分割・
-  命名の改善）は提案に留めず、同じ作業の中で実施する。ただし挙動は変えず、触っていないファイルへ
-  波及する大規模な作り替えは事前に相談する
-- 仕様不明時は推測せず、既存実装と公式ドキュメントを照合する
-- **git のコミット・push は明示的な指示があったときだけ**（「修正して」はファイル編集までの意味）
-- **公開リポジトリなので、コミットメッセージに生成フッター・署名・セッション URL を書かない**
-  （公開履歴に残り、あとから消すには履歴の書き換えが要る）
+- Write code for human readers. Improve readability in files you touch within the same task:
+  organize structure, split modules naturally, and improve names. Do the work instead of only suggesting it.
+  Preserve behavior; discuss large rewrites that spread into untouched files beforehand.
+- When a specification is unclear, compare the existing implementation with official documentation instead of guessing.
+- **Commit and push only when explicitly instructed.** A request to fix something authorizes file edits only.
+- **This is a public repository. Do not add generated footers, signatures, or session URLs to commit messages.**
+  They become public history and require rewriting history to remove later.
 
-## コード編集後の検証フロー
+## Validation after code edits
 
-**計算的センサー（整形・型・lint・ビルド・テスト）を先に通す。緑になってから `/review-loop`（LLM レビュー）。**
+**Run computational checks (formatting, types, lint, build, tests) first. Run `/review-loop` (LLM review) only after they pass.**
 
 ```bash
-scripts/check-harness.sh          # 共通ハーネスの同期・リンク・hook 入力
-cd converter && uv run poe check   # ruff format --check → ruff check → mypy → pytest
-cd viewer && npm run check         # format:check → typecheck → lint → build → test
+scripts/check-harness.sh          # scripts/ format, lint, and types, then harness sync and hook input
+(cd converter && uv run poe check)   # ruff format --check → ruff check → mypy → pytest
+(cd viewer && npm run check)         # format:check → typecheck → lint → build → test
 ```
 
-全体を検証するときはリポジトリルートで `scripts/check.sh` を実行する。
-ハーネスだけの変更では `scripts/check-harness.sh` と対象の参照確認を行う。
-Codex の入口と共通設定の同期・初回信頼手順は README.md の「Codex の共通ハーネス」を参照。
+To validate everything, run `scripts/check.sh` from the repository root.
+For harness-only changes, run `scripts/check-harness.sh` and check the affected references.
+See “Shared Codex harness” in README.md for the Codex entry point, shared configuration sync, and initial trust setup.
 
-機械チェックはコンテナの外で走らせる。`compose.yaml` の 2 つのイメージには dev 依存が入っていない。
+Run computational checks outside containers. Neither image in `compose.yaml` includes development dependencies.
 
-**WebGL / WebXR の描画は機械チェックに出ない。** シェーダーのコンパイルエラーはブラウザの
-console にしか出ないので、`viewer` の描画を触ったら開発サーバーを開いて console を確認する。
+**Computational checks do not cover WebGL / WebXR rendering.** Shader compilation errors appear only in the
+browser console. After changing rendering in `viewer`, open the development server and check the console.
 
-**Looking Glass の表示は機械チェックでは分からない。** 変換結果と再生は実機で確認する
-（手順は README.md の「実機で確認する」）。
+**Computational checks cannot verify the Looking Glass display.** Check conversion output and playback on real hardware
+(see “Validate on hardware” in README.md).
 
-## 外部リファレンスの確認ルール（重要）
+## Verify external references (important)
 
-quilt のレイアウト規約・キャリブレーション値の取得方法・深度推定モデルの入出力を
-**記憶や推測で書かない。** 必ず公式ドキュメント / 論文 / リファレンス実装で現物を確認してから実装する。
-URL の一覧と既知の制限は `.claude/rules/external-apis.md`（正本）にある。
+**Do not implement quilt layout conventions, calibration retrieval, or depth-model inputs and outputs from memory or guesses.**
+Inspect the official documentation, paper, or reference implementation before implementing them.
+`.claude/rules/external-apis.md` is the source of truth for reference URLs and known limitations.
 
-## 設計判断 (WHY)
+## Design decisions (WHY)
 
-- **変換を事前レンダリングにする**: 深度推定と視点合成が重いので、再生時の負荷をゼロにするため。
-  リアルタイム変換より品質側にコストを寄せられる
-- **深度は単眼推定ではなくステレオマッチングで取る**: 入力に 2 視点あるので、視差から直接求めれば
-  スケールの曖昧さがない。動画ではフレーム間の深度のブレがちらつきとして見えるので、
-  時間方向の一貫性を優先する
-- **quilt に焼き込んでから再生する**: 再生側は quilt のタイルを視点ごとに振り分けるだけで済み、
-  three.js で毎フレーム多視点レンダリングする必要がなくなるため
-- **変換は Python、再生は Web に分ける**: 深度推定モデルのエコシステムが PyTorch 中心で、
-  Looking Glass のブラウザ表示は WebGL / WebXR が要る。1 言語へ寄せると片方が茨の道になる
-- **表示は Bridge から較正値を取り、自前のレンチキュラーシェーダーで描く**: 事前レンダリング済みの
-  quilt をそのままテクスチャとして使えるので、`getDisplays()` の較正値（pitch / slope / center / DPI /
-  画面解像度）からサブピクセルごとの視点を求めて振り分ける（`viewer/src/lenticular.ts`）。
-  Looking Glass は OS 上の別画面なので、canvas を別窓へ移して実画素と 1 対 1 で並べる。
-  cast 経路（`QuiltHologram` を Bridge に渡す）も併設してあるが、**Bridge は別プロセスなので blob URL を
-  読めない**。http(s) の URL かローカルのファイルパスを指定したときだけ使える。
-  どちらが実機で綺麗に出るかは未確認（README の実機確認の手順で比べる）。
-  `@lookingglass/webxr` ポリフィルは 3D シーンを毎フレーム多視点レンダリングする用途なので使わない
-- **機種のプリセットは実機の Bridge が返す値に合わせる**: `available_output_devices` の
-  `defaultQuilt`（`tileX` / `tileY` / `quiltX` / `quiltY` / `quiltAspect`）が唯一の正確な出典。
-  `@lookingglass/webxr` のポリフィルにも機種別の表があるが解像度が実機と食い違う。
-  聞き方は `.claude/rules/external-apis.md`。**Go は 11 列 × 6 行 / 4092² / アスペクト 0.5625 の縦画面**
-- **機種の既定は `go`**（手元の実機が Go）: 以前は「取り違えに気付けない」ことを理由に既定値を
-  置いていなかったが、毎回選ばせるほうの代償が大きい（Bridge を立てていないと 1 枚も描けない）。
-  取り違えは 2 つで防ぐ: Bridge に繋げば `defaultQuilt` から自動で上書きし
-  （`usePreview.ts` の `detected`）、接続中の機種と食い違えば警告を出す（`SourcePanel.vue` の `warning`）。
-  **機種を取り違えた quilt でも変換は最後まで成功する**ので、実機に出すまで崩れは分からない
-  （5x9 の quilt を 11x6 の Go に出した）
-- **Bridge はプレビューと書き出しには要らない**: 要るのは機種の自動入力・実機の窓へ移す・cast の
-  3 つだけ。機種が選ばれていれば変換は通る（`usePreview.ts` の `ready` は素材と機種だけを見る）。
-  未接続でもレンチキュラー表示は出るが、較正値はダミーなので縞は実機の位置に合っていない
-- **縦横比が合わないときは切り落として収める（`--fit crop` が既定）**: Go と Portrait はタイルが
-  縦長で、横長の素材だと縦横比が合わない。切り出した範囲を画面いっぱいに拡大すると視差も同じ倍率で
-  増えるので、余白を足すより立体感が強く出る（実測で 5 px → 15 px）。実機で両方見て決めた。
-  余白を足す `pad` も残してあり、余白は**視差推定より後**に足す。真っ黒な余白は左右で同じ絵なので
-  ステレオマッチングが視差を決められず、自動の収束面（視差の中央値）まで狂わせる
-  （`stereo.py` の `fit_content` / `pad_to_tile`）
-- **視差は正負の両側を探す（`min_disparity` の既定は負）**: 画面より手前に出る面の視差は負になる。
-  SGBM の `minDisparity=0` だとその面が探索範囲の外で、奥行きが 0 に潰れる。
-  実写のステレオは収束面が被写体側にあることが多く、場面全体が負の視差になる
-- **左右の入れ替わりは絵からは判定できない**: 入れ替えた対は「奥行きが反転した場面」の正しい
-  ステレオ対になる。以前は「正の視差でうまく説明できないなら入れ替わり」と判定していたが、
-  正負の両側を探すようになった今は成り立たない（そして奥に沈んだ正しい素材を誤検知していた）。
-  判定は実機で見て人間が行う
-- **魚眼（VR180）の素材は平面へ直してから視差を取る**: ステレオマッチングは同じ行に対応点が
-  ある前提で横だけを探す。魚眼は中心から離れるほど縦にもずれるので探索が合わず、絵がブレる。
-  丸い絵の外の黒い縁もそのまま quilt に入る（実測でタイルの 22.9%、平面へ直すと 0.0%）。
-  円の中心は**片眼ごとに測る**ので、左右で光軸がずれた素材（実測で縦に 1.0 px）でも残らない。
-  **半径はいちばん広い行と高い列から取る。円の最小二乗（Kåsa 法）は使わない** —
-  実測した素材の外形は真円より上下が広く、円として当てると半径が 437 px から 469 px へ膨らんだ。
-  素材ごとの写り方の違いは視野角（`--fov`）で吸収し、実機で見て決める（`fisheye.py`）
-- **視点合成は視点ごとに並列に走らせる**: 1 フレームの内訳は視差推定 31 ms・視点合成 1602 ms
-  （66 視点）・quilt 合成 11 ms で、**95% が視点合成**。視点はお互いに依存しないので分けられる。
-  cv2 と numpy が GIL を離すのでスレッドで足り、実測で 1 枚 1.66 s → 0.46 s になった。
-  フレーム間は分けない（時間方向の平滑化で前フレームに依存する）
-- **視差はステレオマッチング（SGBM + WLS フィルタ）を既定にする**: 重みの取得が要らず、
-  ホストの CPU だけで今すぐ動く。時間的一貫性を持つ深層モデル（`.claude/rules/external-apis.md` の候補）へ
-  差し替えられるよう、`converter/src/lkg_quilt_converter/disparity.py` の `DisparityEstimator` の形だけを固定してある。
-  **無地の面は原理的に視差が決まらない**ので、模様の無い被写体では奥行きが背景に潰れる
-- **時間方向の平滑化は「差が小さい画素だけ」に掛ける**: 単純な指数移動平均は動く被写体を引きずる。
-  前フレームとの差が閾値を超えた画素は平滑化しない（`blend_temporal`）
-- **収束面（視差ゼロの面）は最初のフレームで決めて固定する**: フレームごとに求め直すと場面全体が
-  前後に泳ぐ。`--convergence` で明示指定もできる
-- **quilt のレイアウトはファイル名の規約から読む**: 列数・行数・アスペクト比を変換側と再生側で
-  二重に持たないため。`<stem>_qs<columns>x<rows>a<aspect>.mp4` が公式の規約で、
-  ビューアはこれを読んでレイアウトを判定する（`converter/src/lkg_quilt_converter/quilt.py` と
-  `viewer/src/quilt.ts`）
-- **Docker を既定の実行経路にする**: ffmpeg・Python・node をマシンに入れずに済むので、
-  変換をすぐ試せる。ただし **Looking Glass Bridge と実機はホスト側**にあるので、viewer は
-  コンテナで dev サーバーを動かしてブラウザはホストで開く形にしてある（実機表示はコンテナ内で
-  完結しない）。`out/` を dev サーバーの `public/` にマウントしているのは、Bridge の cast が
-  blob URL を読めず http の URL を要るため
-- **収束面は再生側で動かし、その値をそのまま焼き込む**: 収束面を Δ 動かすと、位置 `position` の
-  視点の絵は横へ `position × Δ` 画素動く（`dibr.py` の `view()` の前進ワープがそのまま
-  平行移動になる）。実測で一致した（span 1.2 / Δ=20 で視点 65 は理論 22.00 px・変換の実測
-  22.00 px・シェーダーの実測 21.93 px、5 視点すべて残差 0.13 px 以下）。なのでシェーダーは
-  `dibr.view_positions` と同じ式で視点位置を出し（`lenticular.ts` の `quiltUv`）、
-  実機を見ながら動かした値を「書き出す」で**絶対値として焼き込む**
-  （`auto` のままだと動画の先頭フレームで決め直され、見た絵とずれる）。
-  **`span`（立体の強さ）は視点そのものを作り直すので描き直しが要る**
-- **画面は作業の順に 4 枚のパネルへ分ける（ディスプレイ → 素材 → 調整 → 書き出し）**:
-  機種が決まらないと何も描けないのに Bridge の接続が画面の一番下にあった。絵は左に固定し、
-  操作は右の列に番号付きで並べる（`App.vue` のレイアウトと各 `*Panel.vue`）
-- **描き直しはボタンではなく自動で走らせる**: 押し忘れると古い絵を見ながら詰めることになり、
-  実機で初めてずれに気付く。設定が変わったら 400 ms 待って 1 枚描き直し、
-  描いている間に変わればもう一度回す（`usePreview.ts` の `renderKey` / `run`）。
-  掴んでいる間は投げない（1 枚 2 秒掛かる）。描き直しの最中は絵の上に「描き直している…」と出す
-- **画面の文言は `viewer/src/i18n.ts` に集め、日本語と英語を切り替える**: vue-i18n を入れずに
-  自前で持つのは、**英語の抜けを typecheck で落とせる**から（`en` を
-  `Record<keyof typeof ja, string>` と宣言してある）。ライブラリの機能はどれも要らなかった。
-  書き方の規約は `.claude/rules/viewer-vue.md`
-- **スライダーには数値の欄を必ず添える（`ValueSlider.vue`）**: 掴んで動かすだけでは刻みより
-  細かい値を入れられず、実機で詰めた値を打ち込めない。欄は**確定したときだけ**受け、
-  範囲の外は端へ丸める（欄だけ範囲外に出せると絵とスライダーの位置が食い違う）。
-  読めない値は赤くして弾く（`type="number"` を使わない理由は `.claude/rules/viewer-vue.md`）
-- **焼き込む収束面は内訳で見せる**: 「焼き込む値 -2.25 px」だけでは何の数字か分からない。
-  自動判定と手で動かした分の**足し算として出す**（`TunePanel.vue` の `baked`）
-- **`out/` に残るものは画面から一覧して消せるようにする（`LibraryPanel.vue`）**: 素材は 1 本
-  数百 MB、quilt 動画は 40 MB を超える。API に一覧が無かったので、溜まっても画面からは
-  見えず消しようがなかった。**変換中の素材は消さない**（読んでいる途中で失敗する。
-  `JobStore.uses_source` で見て 409 を返す）。素材の「使う」は上げ直さずに調整へ戻す経路
-- **文言は異常時だけ出す**: 合っているときの相槌（「接続中の機種に合わせてある」など）を
-  並べると、本当に読ませたい警告が埋もれる。判定と食い違うときだけ 1 行出す
-  （`SourcePanel.vue` の `warning`）
-- **パラメータは 1 フレームで詰めてから全体を焼く**: 動画全体は 1 フレームの 200 倍掛かる
-  （Go / crop で 1 枚 1.2 秒、6 秒の動画で約 4 分）。プレビューは変換本体と同じ
-  `pipeline.preview_frame()` を通すので、**見えたものと焼き上がりが食い違わない**。
-  ブラウザ側で DIBR を再実装するとリアルタイムになるが、穴埋めが変わって
-  プレビューが嘘をつくので採らない
-- **左右の入り方は取り込み時に当てる**: 指定を間違えると絵が真っ二つに切れた状態で変換され、
-  しかも変換は最後まで成功するので気付きにくい。ステレオ対なら切り分けた 2 枚は視差の分しか
-  違わないので、左右で割った差と上下で割った差を比べれば向きが分かる（`stereo.py` の `guess_layout`）。
-  **一様ノイズでは成り立たない**（数画素ずらすと無相関になる）ので、テストの合成画像は滑らかに作る
-- **入力動画はジョブと別に持つ（`sources.py`）**: 同じ動画でパラメータを変えながら
-  プレビューするので、ジョブに紐づけると数百 MB を毎回上げ直すことになる。
-  ジョブは入力の id を指すだけで、動画をコピーしない
-- **変換の入口を CLI と HTTP API に分ける**: 画面から動画を投げて進捗を見たいので API を足したが、
-  まとめて回すときは CLI のほうが速い。実処理は `pipeline.convert()` の 1 本に寄せ、
-  進捗は `progress` コールバックで受ける（CLI は標準エラーへ、API はジョブの状態へ）。
-  キューは `jobs.JobStore` が持ち、**ワーカーは 1 本だけ**にしてある。フレーム 1 枚の中では
-  視点を並列に作るので、ジョブを並列に走らせても速くならない。
-  **実行中の残り時間は、ジョブの実測（開始時刻と済んだ枚数）から出す。**
-  書き出し前の所要時間は表示しない。プレビュー時間と変換時間の差が大きいため。
-  プレビュー 1 枚の時間を掛け算すると外れる（1 枚の中に円の検出・JPEG 圧縮・HTTP が入るので、
-  実測で 1 枚 2.9 秒に対して変換は 0.52 秒だった）。
-  **走り出したジョブは止められるようにしてある**（尺を指定し忘れると動画の最後まで焼き続け、
-  60 fps の 16 分で 27 時間になる）。中止は進捗のコールバックから例外で巻き戻し、
-  書きかけの出力は消す。Web フレームワークは `server.py` の中だけに閉じ込め、
-  `jobs.py` は単体でテストできる形にしてある
-- **外挿視点の穴埋めが品質を決める**: ステレオの baseline は人の目の間隔程度しかなく、
-  Looking Glass の視野角より狭い。端の視点ではオクルージョンの穴（disocclusion）が必ず出るので、
-  そこの埋め方が全体の見栄えを左右する
+- **Render conversions offline:** depth estimation and view synthesis are expensive. Pre-rendering removes that
+  work from playback and lets us spend more computation on quality than real-time conversion would allow.
+- **Use stereo matching instead of monocular depth estimation:** two input views let us derive depth directly
+  from disparity without scale ambiguity. Depth variation between video frames appears as flicker, so temporal
+  consistency takes priority.
+- **Bake views into a quilt before playback:** playback only needs to distribute quilt tiles to their respective
+  viewing directions, avoiding multi-view rendering in three.js on every frame.
+- **Separate Python conversion from web playback:** the depth-model ecosystem centers on PyTorch, while browser
+  display on Looking Glass requires WebGL / WebXR. Forcing both into one language makes one side unnecessarily difficult.
+- **Get calibration from Bridge and render with our own lenticular shader:** the pre-rendered quilt can be used
+  directly as a texture. Calibration from `getDisplays()` (pitch / slope / center / DPI / screen resolution)
+  determines each subpixel's view (`viewer/src/lenticular.ts`). Looking Glass is a separate OS display, so move
+  the canvas into a separate window and map it one-to-one to physical pixels. Full screen requires a user
+  gesture **inside that window**, so a double-click there toggles it (`toggleFullscreen` in `QuiltStage.vue`).
+  We do not use the `@lookingglass/webxr` polyfill because it targets rendering a 3D scene from multiple
+  views on every frame.
+- **Show on the device through our own window only, not by casting to Bridge:** an earlier `QuiltHologram`
+  cast path handed a URI to Bridge's player. It was removed after it failed to play on hardware. It also
+  could not show a preview at all, because **Bridge runs in a separate process and cannot read blob URLs**,
+  so it required an exported file behind an http(s) URL or a local path. Keeping both meant two controls in
+  two panels for one job, and a second axis in `QuiltSource` (where the file lives) on top of the one that
+  matters (still preview or video).
+- **Match device presets to values returned by Bridge on actual hardware:** `defaultQuilt` from
+  `available_output_devices` (`tileX` / `tileY` / `quiltX` / `quiltY` / `quiltAspect`) is the only accurate source.
+  The `@lookingglass/webxr` polyfill also has a device table, but its resolutions differ from actual hardware.
+  See `.claude/rules/external-apis.md` for querying instructions.
+  **Go is portrait: 11 columns × 6 rows / 4092² / aspect 0.5625.**
+- **Default the browser device to `go`** (the available physical device is a Go): making users select a device every time
+  has a greater cost than providing a default; without Bridge running, they could otherwise render no preview.
+  Two safeguards prevent device mismatches: a Bridge connection automatically replaces the preset from
+  `defaultQuilt` (`detected` in `usePreview.ts`), and a mismatch with the connected device produces a warning
+  (`warning` in `SourcePanel.vue`). **Conversion succeeds even with the wrong device layout**, so the problem
+  only becomes visible on real hardware (observed with a 5x9 quilt displayed on an 11x6 Go).
+- **Preview and export do not require Bridge:** Bridge is only needed to fill in the device automatically
+  and to place the separate window on the physical display. Conversion works once a device is selected
+  (`ready` in `usePreview.ts` checks only the source and device). Lenticular rendering also works while
+  disconnected, but uses dummy calibration, so its stripes do not align with the physical display.
+- **Crop to fit mismatched aspect ratios (`--fit crop` by default):** Go and Portrait tiles are portrait-shaped
+  and do not match landscape sources. Enlarging the crop to fill the display scales disparity by the same factor,
+  producing stronger depth than padding (measured: 5 px → 15 px). This choice was made by comparing both on hardware.
+  `pad` remains available, but padding is added **after disparity estimation**. Black padding is identical in both
+  eyes, so stereo matching cannot determine its disparity and even the automatic convergence plane (median disparity)
+  becomes incorrect (`fit_content` / `pad_to_tile` in `stereo.py`).
+- **Search both positive and negative disparity (`min_disparity` defaults to a negative value):** valid input can contain negative `x_left - x_right` values. With SGBM's `minDisparity=0`,
+  those correspondences fall outside the search range and depth is lost. Output convergence is applied separately
+  in `dibr.py`; do not infer the side of the output screen from the raw disparity sign.
+- **Images alone cannot determine whether the eyes are swapped:** a swapped pair is a valid stereo pair for a scene
+  with reversed depth. A detector based on failure to explain a pair with positive disparity does not work when
+  searching both signs; it also falsely identified valid sources whose scenes appeared behind the screen.
+  A person must judge the eye order on real hardware.
+- **Rectify fisheye (VR180) footage to a plane before estimating disparity:** stereo matching searches horizontally
+  under the assumption that corresponding points share a row. Fisheye introduces vertical offsets farther from the
+  center, breaking matching and blurring the result. The black border outside the circle would also enter the quilt
+  (measured: 22.9% of a tile, reduced to 0.0% after rectification). Measure the circle center **per eye**, so differences
+  in optical axes do not remain (measured vertical offset: 1.0 px).
+  **Derive the radius from the widest row and tallest column; do not use a least-squares circle fit (Kåsa method).**
+  The measured source outline was taller than a true circle, and circle fitting inflated its radius from 437 px to
+  469 px. Accommodate differences between sources with field of view (`--fov`), judged on hardware (`fisheye.py`).
+- **Parallelize view synthesis across views:** a measured frame took 31 ms for disparity, 1602 ms for view synthesis
+  (66 views), and 11 ms for quilt assembly: **95% was view synthesis**. Views are independent. Threads suffice because
+  cv2 and numpy release the GIL; measured frame time fell from 1.66 s to 0.46 s. Do not parallelize across frames,
+  because temporal smoothing depends on the previous frame.
+- **Default to stereo matching (SGBM + WLS filtering):** it requires no model-weight downloads and runs immediately
+  on the host CPU. Only the `DisparityEstimator` interface in `converter/src/lkg_quilt_converter/disparity.py` is fixed,
+  so a temporally consistent deep model can replace it (candidates are in `.claude/rules/external-apis.md`).
+  **Disparity is fundamentally indeterminate on textureless surfaces**, so untextured subjects can collapse into
+  the background in depth.
+- **Apply temporal smoothing only to pixels with small changes:** a plain exponential moving average leaves trails
+  behind moving subjects. Pixels whose difference from the previous frame exceeds the threshold are not smoothed
+  (`blend_temporal`).
+- **Determine convergence (the zero-disparity plane) on the first frame and keep it fixed:** recomputing it every
+  frame makes the whole scene drift forward and backward. `--convergence` also allows an explicit value.
+- **Read quilt layout from the filename convention:** avoid maintaining columns, rows, and aspect ratio separately
+  in conversion and playback. `<stem>_qs<columns>x<rows>a<aspect>.mp4` is the official convention; the viewer reads
+  it to determine layout (`converter/src/lkg_quilt_converter/quilt.py` and `viewer/src/quilt.ts`).
+- **Make Docker the default execution path:** conversion can be tried without installing ffmpeg, Python, or node
+  on the machine. **Looking Glass Bridge and the physical display remain on the host**, so the viewer's development
+  server runs in a container while the browser runs on the host; physical display does not happen entirely inside
+  containers. `out/` is mounted into the development server's `public/` so exported quilts are reachable at
+  an http URL, which is what the library's playback loads.
+- **Adjust convergence during playback and bake in that exact value:** moving convergence by Δ shifts the image
+  of a view at `position` horizontally by `position × Δ` pixels (the forward warp in `dibr.py`'s `view()` becomes a
+  translation). Measurements agree: at span 1.2 / Δ=20, view 65 moved 22.00 px in theory, 22.00 px in conversion,
+  and 21.93 px in the shader; all five tested views had residuals at most 0.13 px. The shader therefore calculates
+  view positions with the same formula as `dibr.view_positions` (`quiltUv` in `lenticular.ts`). Export **bakes the
+  hardware-adjusted convergence as an absolute value**. Leaving it `auto` would recompute it on the first video frame
+  and differ from the preview. **Changing `span` (depth strength) requires a new render because it creates different views.**
+- **Arrange four panels in workflow order (display → source → adjustment → export):** a device must be selected
+  before anything can render, so Bridge connection belongs at the start. Keep the image on the left and numbered
+  controls in the right column (the `App.vue` layout and each `*Panel.vue`).
+- **Re-render automatically instead of requiring a button:** otherwise users can adjust a stale image and discover
+  the mismatch only on hardware. Wait 400 ms after a setting changes, then render one frame; if settings change during
+  rendering, run again (`renderKey` / `run` in `usePreview.ts`). Do not submit while dragging (a frame takes 2 seconds
+  in the observed case). Show “描き直している…” over the image while re-rendering.
+- **Keep UI text in `viewer/src/i18n.ts` and support Japanese and English:** the small custom implementation makes
+  **missing English strings fail type checking** (`en` is declared as `Record<keyof typeof ja, string>`).
+  No vue-i18n features were needed. Conventions are in `.claude/rules/viewer-vue.md`.
+- **Always pair sliders with numeric inputs (`ValueSlider.vue`):** dragging alone cannot enter finer values than
+  the slider step or reproduce values tuned on hardware. Accept input **only when committed**, and clamp out-of-range
+  values to the limits; otherwise the image and slider position disagree. Reject unparseable values and mark them red
+  (see `.claude/rules/viewer-vue.md` for why we avoid `type="number"`).
+- **Show the components of baked convergence:** “baked value -2.25 px” alone does not explain the number. Display it
+  as **automatic convergence plus the manual adjustment** (`baked` in `TunePanel.vue`).
+- **Let users list and delete files left in `out/` through the UI (`LibraryPanel.vue`):** a source can be hundreds of
+  MB and a quilt video more than 40 MB. Users need to see and remove accumulated files. **Do not delete a source while
+  it is being converted**, as that would interrupt reading; check `JobStore.uses_source` and return 409. “Use” on a
+  source returns to adjustment without uploading it again.
+- **Show explanatory messages only for abnormal states:** routine confirmations such as “matches the connected
+  device” bury warnings that need attention. Show one line only when settings disagree with detection
+  (`warning` in `SourcePanel.vue`).
+- **Tune parameters on one frame before rendering the full video:** full conversion can take 200 times as long
+  (Go / crop: 1.2 seconds per preview frame, about 4 minutes for a 6-second video). Preview uses the same
+  `pipeline.preview_frame()` as conversion, so **what users see matches the baked result**. Reimplementing DIBR in
+  the browser would be real-time, but different hole filling would make the preview misleading, so we do not do it.
+- **Detect stereo layout on import:** a wrong layout splits the image incorrectly yet still completes conversion,
+  making it hard to notice. The two eyes of a stereo pair differ only by disparity, so comparing differences after
+  horizontal and vertical splitting reveals the layout (`guess_layout` in `stereo.py`). **This does not hold for
+  uniform noise**, which becomes uncorrelated after a few pixels of shift; use smooth synthetic images in tests.
+- **Store input videos separately from jobs (`sources.py`):** parameter tuning reuses the same video for many previews.
+  Tying input storage to a job would re-upload hundreds of MB each time. Jobs reference a source ID without copying video.
+- **Provide both CLI and HTTP API conversion entry points:** the UI needs uploads and progress, while the CLI is
+  faster for batch work. Keep actual processing in one `pipeline.convert()` implementation and report progress through
+  a `progress` callback (stderr for CLI, job state for API). `jobs.JobStore` owns the queue with **a single worker**.
+  Views within a frame are already synthesized in parallel, so concurrent jobs do not make conversion faster.
+  **Remaining time for a running job comes from that job's measurements (start time and completed frames).**
+  Do not display an estimate before export: preview and conversion times differ substantially. Multiplying a preview
+  frame's time is inaccurate because preview includes circle detection, JPEG compression, and HTTP; measured preview
+  time was 2.9 seconds per frame versus 0.52 seconds for conversion.
+  **Running jobs can be canceled**: forgetting to limit duration would render to the end, taking 27 hours for a
+  16-minute video at 60 fps. Cancellation raises an exception from the progress callback to unwind processing and
+  removes the incomplete output. Keep the web framework inside `server.py` so `jobs.py` can be tested independently.
+- **Hole filling in extrapolated views determines quality:** the stereo baseline is only about the distance between
+  human eyes and covers less than the Looking Glass view cone. Edge views inevitably reveal occlusion holes
+  (disocclusions), so filling them determines the overall appearance.
 
-## AI 駆動開発ハーネス
+## AI-driven development harness
 
-「ガイド × センサー」「計算的 × 推論的」の 2 軸で構成する。
+The harness has two axes: guides versus sensors, and computational versus inferential.
 
-|  | 計算的（決定的） | 推論的（LLM / 人） |
+| | Computational (deterministic) | Inferential (LLM / human) |
 | --- | --- | --- |
-| **ガイド**（入力に効く） | この CLAUDE.md / `.claude/rules/*.md`（`paths:` 条件ロード） | AskUserQuestion / ユーザーの方針指示 |
-| **センサー**（出力を判定） | `uv run poe check` / `npm run check` | `/review-loop`（MUST/SHOULD 0 まで反復）/ 実機での表示確認 |
+| **Guides** (shape input) | This CLAUDE.md / `.claude/rules/*.md` (conditional loading with `paths:`) | AskUserQuestion / user instructions |
+| **Sensors** (judge output) | `uv run poe check` / `npm run check` | `/review-loop` (repeat until zero MUST/SHOULD findings) / display checks on hardware |
 
-原則: **計算的センサーを先に通す。LLM レビューは機械チェックが緑になってから。**
+Principle: **run computational checks first. LLM review starts only after they pass.**
 
-- レイヤ別の規約は `.claude/rules/` にあり、対象ファイルを触るときだけ自動ロードされる
-- レビュー観点の正本は `.claude/agents/code-reviewer.md`（他所に複製しない）
-- ドキュメント・コメントの置き場所は @.claude/rules/documentation.md
-  （`paths:` を持たないルールなので常時ロードされる）
-- まとまった機能追加の後には `/harness-audit` で記述と実コードの乖離を監査する
-- サブエージェントへの委任は独立した大きな作業に限る。数回のツールコールで済む作業を委任しない
+- Layer-specific conventions live in `.claude/rules/` and load automatically only when working on matching files.
+- `.claude/agents/code-reviewer.md` is the source of truth for review criteria; do not duplicate them elsewhere.
+- Documentation and comment ownership is defined in @.claude/rules/documentation.md
+  (always loaded because the rule has no `paths:` condition).
+- After a substantial feature addition, run `/harness-audit` to check documentation against the actual code.
+- Delegate to subagents only for substantial independent tasks. Do not delegate work that takes only a few tool calls.
 
-## ハーネスの自己改善
+## Harness self-improvement
 
-このハーネスは静的な設定ではなく、**セッションごとに賢くなる運用資産**として扱う。
-トリガーと書き方の規律は `.claude/rules/documentation.md` に従う（指摘を受けたら、非自明な罠を
-踏んだら、実態と違う記述を見つけたら、そのセッション中に反映する）。
+Treat this harness as **an operational asset that improves with each session**, rather than static configuration.
+Follow `.claude/rules/documentation.md` for triggers and writing rules: incorporate user corrections, non-obvious traps,
+and discrepancies between documentation and reality within the same session.

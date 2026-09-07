@@ -1,330 +1,385 @@
 # lkg-quilt-studio
 
-ステレオ動画（左右 2 視点）を [Looking Glass](https://lookingglassfactory.com/) 用の
-**quilt 動画**に変換し、ブラウザで再生するツール。
+English | [日本語](README.ja.md)
 
-## 仕組み
+Convert stereo video (left and right views) into **quilt video** for
+[Looking Glass](https://lookingglassfactory.com/) and play it in a browser.
 
-Looking Glass は視点ごとに数十枚の画像（quilt）を同時に表示し、見る角度で切り替えて視差を作る。
-ステレオ動画は 2 視点しか持たないため、そのまま流しても裸眼立体の視差にならない。
-そこで視差から深度を求め、足りない視点を合成してから quilt に焼き込む。
+<p align="center">
+  <img src="docs/media/wiggle.gif" alt="One converted frame cycling through views taken from the quilt" width="300">
+</p>
 
+<p align="center">
+  <sub>One converted frame, cycling through 11 of the quilt's 66 views, both ends included.<br>
+  On a Looking Glass, the view changes with your viewing angle instead.</sub>
+</p>
+
+This English README is authoritative. The Japanese version is a human-readable
+translation; update both in the same change. English takes precedence if they differ.
+
+## How it works
+
+Looking Glass displays dozens of views packed into a quilt, directing different
+views to different viewing angles to create parallax. Stereo video contains only
+two views, so it cannot provide that range of views directly. The converter
+estimates depth from disparity, synthesizes the missing views, and packs them into a quilt.
+
+```text
+Stereo video → disparity (depth) → view synthesis (DIBR) → quilt layout → quilt video → browser playback
+└──────────────── converter (Python, prerendered) ─────────────────┘   └─ viewer (Vue 3 + three.js) ─┘
 ```
-ステレオ動画 → 視差(深度)推定 → 視点合成(DIBR) → quilt レイアウト → quilt 動画 → ブラウザで再生
-└──────────── converter（Python・事前レンダリング） ────────────┘   └─ viewer（Vue 3 + three.js）─┘
-```
 
-converter は CLI と HTTP API の 2 つの入口を持つ。API を使うと、ブラウザから動画を投げて
-変換の進捗を見て、できた quilt をその場で再生・ダウンロードできる。
+![Left and right input, estimated disparity, and the 11x6 quilt built from them](docs/media/pipeline.jpg)
 
-変換を事前レンダリングにしているのは、深度推定と視点合成が重く、再生時の負荷をゼロにしたいため。
+Left and right input, the disparity estimated from them, and the resulting quilt
+for Looking Glass Go: 11 columns x 6 rows, 66 views in one 4092x4092 frame.
 
-## 構成
+The converter has CLI and HTTP API entry points. Through the API, you can upload
+video in the browser, follow conversion progress, and play or download the result.
 
-| ディレクトリ | 役割 |
+Depth estimation and view synthesis are expensive. Prerendering keeps that work
+out of playback.
+
+## Structure
+
+| Directory | Purpose |
 | --- | --- |
-| `converter/` | 変換（視差推定 → 視点合成 → quilt エンコード）。CLI と HTTP API |
-| `viewer/` | 再生 Web アプリ。変換の依頼もここから出す |
+| `converter/` | Conversion: disparity estimation → view synthesis → quilt encoding. CLI and HTTP API. |
+| `viewer/` | Browser playback and conversion controls. |
 
-## 必要なもの
+## Requirements
 
-- Docker Desktop（**推奨**。ffmpeg も Python も node も入れずに済む）
-- Looking Glass 本体と Looking Glass Bridge（実機表示の確認用。ホスト側に入れる）
+- Docker Desktop (**recommended**; no separate ffmpeg, Python, or Node installation needed)
+- A Looking Glass display and Looking Glass Bridge installed on the host, for hardware validation
 
-Docker を使わない場合は代わりに以下が要る。
+For local execution without Docker, install these instead:
 
-- [mise](https://mise.jdx.dev/)（node と uv のバージョンを管理する。`.mise.toml` が正本）
-- ffmpeg（動画の入出力）
+- [mise](https://mise.jdx.dev/) to manage Node and uv versions; `.mise.toml` is authoritative
+- ffmpeg for video input and output
 
-## セットアップ
+## Setup
 
 ### Docker
 
-初回だけイメージを作る。あとは `docker compose` のコマンドだけで動く。
+Build the images once. After that, use the `docker compose` commands below.
 
 ```bash
 docker compose build
 ```
 
-### ローカル
+### Local
+
+Run from the repository root:
 
 ```bash
-mise install              # node と uv を入れる
-uv python install 3.14    # Python 本体は uv が管理する
-cd converter && uv sync   # 変換 CLI の依存
-cd viewer && npm ci       # 再生アプリの依存
+mise install              # Install Node and uv
+uv python install 3.14    # uv manages Python itself
+(cd converter && uv sync) # Converter dependencies
+(cd viewer && npm ci)     # Viewer dependencies
 ```
 
-### Codex の共通ハーネス
+### Shared Codex harness
 
-運用の正本は `CLAUDE.md` と `.claude/`。Codex は `AGENTS.md` から参照する。
-スキルは相対リンク、レビュー担当は正本を読む設定で共有する。
-権限と hook は `.claude/settings.json` から生成する。
-hook と同期には PATH 上の Python 3.9 以上を使う。
-ハーネスのチェックは、ローカル手順で用意した `converter/.venv` の Python を使う。
+`CLAUDE.md` and `.claude/` are the authoritative operating instructions.
+Codex reaches them through `AGENTS.md`. Skills are shared through relative symlinks;
+the reviewer configuration directs it to the canonical review instructions.
+Permissions and hooks are generated from `.claude/settings.json`.
+Hooks and synchronization require Python 3.9 or later on PATH.
+Harness checks use Python from `converter/.venv`, created by the local setup above.
 
 ```bash
-python3 scripts/sync-harness.py   # 共通設定を変更したとき
-scripts/check-harness.sh         # 同期・参照・hook 入力の検査
-scripts/check.sh                 # ハーネス + viewer + converter の全チェック
+python3 scripts/sync-harness.py   # After changing shared settings
+scripts/check-harness.sh         # Check scripts/, synchronization, references, and hook inputs
+scripts/check.sh                 # All harness, viewer, and converter checks
 ```
 
-Codex CLI では `/hooks` を開き、開始時と編集前の hook を確認して信頼する。
-その後、新しいセッションで使う。hook の定義変更後も再確認が必要。
-未信頼・非対応の環境では `AGENTS.md` の手順でルールを読む。
-開始時は常時ルール、編集前は対象ファイルに一致するルールを渡す。
-編集前 hook の対象は Claude の `Edit` / `Write` と Codex の `apply_patch`。
-シェルや外部ツールの編集では、編集前に対象ルールを直接読む。
-編集後の機械チェックは `CLAUDE.md` の検証フローに従う。
+In Codex CLI, open `/hooks`, inspect and trust the session-start and pre-edit hooks,
+then start a new session. Inspect them again after their definitions change.
+In environments where hooks are untrusted or unsupported, follow `AGENTS.md` to
+read the rules manually. Session start supplies always-loaded rules; pre-edit hooks
+supply rules matching the target files. Pre-edit hooks cover Claude's `Edit` and
+`Write` and Codex's `apply_patch`. Before editing through a shell or external tool,
+read the relevant rules directly. After editing, follow the checks in `CLAUDE.md`.
 
-許可リストはコマンド単位の設定で、全体の実行権限モードとは別。
-`approval_policy` / `sandbox_mode` は Git で共有する `.codex/config.toml` に置く。
-このプロジェクトはフルアクセス・承認なしで実行する設定とする。
-上位の管理設定・起動オプションが優先される。
-同期は `Bash(command:*)` 形式に対応し、未対応の形式はエラーにする。
-生成ファイル `.codex/hooks.json` / `.codex/rules/claude.rules` は直接編集しない。
+The command allowlist is separate from the overall execution permission mode.
+`approval_policy` and `sandbox_mode` live in the tracked `.codex/config.toml`.
+This project configures full access without approval prompts.
+Higher-priority managed settings and launch options take precedence.
+Synchronization supports `Bash(command:*)` patterns and rejects unsupported forms.
+Do not edit generated `.codex/hooks.json` or `.codex/rules/claude.rules` directly.
 
-診断対象は `codex-cli 0.153.4`。
-静的チェックの成功は、クライアントで hook が信頼・実行されたことを保証しない。
-仕様は [公式 hook 文書](https://learn.chatgpt.com/docs/hooks) と
-[公式権限ルール文書](https://learn.chatgpt.com/docs/agent-configuration/rules) を参照。
+The configuration was checked against `codex-cli 0.153.4`.
+Passing static checks does not prove that the client trusted or executed the hooks.
+See the [official hook documentation](https://learn.chatgpt.com/docs/hooks) and
+[official permission rule documentation](https://learn.chatgpt.com/docs/agent-configuration/rules).
 
-## 使い方
+## Usage
 
-以下は Docker 側のコマンドで書く。ローカルで動かすときは読み替える。
+Examples below use Docker. For local execution, use the equivalents in this table.
 
-| やること | Docker | ローカル |
+| Task | Docker | Local |
 | --- | --- | --- |
-| 画面を開く | `docker compose up` | `cd viewer && npm run dev` と `cd converter && uv run lkg-quilt-api` |
-| CLI で変換 | `docker compose run --rm converter …` | `cd converter && uv run lkg-quilt-converter …` |
+| Open the app | `docker compose up` | `cd viewer && npm run dev` and `cd converter && uv run lkg-quilt-api` in separate terminals |
+| Convert with the CLI | `docker compose run --rm converter …` | `cd converter && uv run lkg-quilt-converter …` |
 
-変換する動画はリポジトリ直下（`samples/` など）に置く。コンテナにはリポジトリ全体が
-マウントされるので、パスはホストと同じ書き方でよい。
+Place input videos inside the repository, for example in `samples/`.
+The whole repository is mounted in the container, so repository-relative paths work there.
+For local CLI commands run from `converter/`, use `../samples/` and `../out/`.
 
-### 0. 動作確認用のサンプルを用意する
+### 0. Get a sample
 
-手持ちのステレオ動画が無ければ、[Big Buck Bunny](https://peach.blender.org/) の
-上下並びステレオ版から 6 秒だけ切り出して置くスクリプトがある。
+If you do not have stereo footage, this script downloads and extracts six seconds
+from the top-bottom stereo version of [Big Buck Bunny](https://peach.blender.org/).
 
 ```bash
-./scripts/fetch-sample.sh   # samples/bbb_stereo_tb.mp4 ができる（57 MB 取得）
+./scripts/fetch-sample.sh   # Creates samples/bbb_stereo_tb.mp4; downloads 57 MB
 ```
 
-1920x2160（1920x1080 の 2 段重ね）で、上が左眼。実写に近い密度の CG なので
-ステレオマッチングが効く。**芝や毛のように模様のある被写体でないと視差が決まらない**ので、
-自分の動画で試すときもここが効いてくる。
+The sample is 1920×2160: two stacked 1920×1080 views, with the left eye on top.
+Its detailed CG imagery works well for stereo matching. **Texture, such as grass
+or fur, is needed to resolve disparity.** Keep this in mind with your own footage.
 
-`--span` は既定の 2.0 だと外挿しすぎて、ウサギの耳のような細い被写体が崩れる。
-この素材では 1.0〜1.2 が見栄えの分かれ目だった。
+The default `--span` of 2.0 extrapolates too far for this sample, breaking thin
+subjects such as the rabbit's ears. Values around 1.0–1.2 gave better results.
 
-**機種の指定を間違えると全部無駄になる。** 既定は `go` なので、別の機種なら変換する前に
-下の「機種を確かめる」で自分の Looking Glass がどのプリセットかを確かめる。
+**A quilt for the wrong model will not display correctly.** The browser defaults
+to `go`; the CLI defaults to `16`. Check your preset under “Check your display model”
+below before converting.
 
-### 1. 画面から変換する
+### 1. Convert in the browser
 
 ```bash
 docker compose up   # http://localhost:5173
 ```
 
-左が絵、右が操作。右の 4 つのパネルが作業の順番になっている。
-表示は**日本語と英語**を切り替えられる（右上のボタン。選んだ言語はブラウザに残る）。
+![The viewer with a source loaded: preview on the left, four numbered panels on the right](docs/media/viewer.jpg)
 
-1. **ディスプレイ** — 「Bridge に接続」を押すと機種が自動で入る。**接続は必須ではない**
-   （既定は `go`。機種が合っていればプレビューと書き出しは Bridge なしで通る）
-2. **素材** — 「動画を選ぶ」を押すか、その周りの枠へ動画をドロップする。
-   動画は1つずつ取り込む。1 回だけ上げて、**並びと写り方は中身から自動で判定する。**
-   **1 枚目が自動で描かれて**左に出る
-3. **調整** — 「Looking Glass へ移す」で実機に出し、収束面と立体の強さを動かして詰める
-4. **書き出し** — 決まったら「書き出す」。終わると再生とダウンロードのリンクが出る
+The image is on the left and controls are on the right. Four panels follow the
+workflow. Switch between **English and Japanese** with the top-right button;
+the browser remembers your choice.
 
-再生中は、絵の下の音量スライダーとミュートボタンで音を調整する。
-自動再生はミュートで始まる。音量を上げるか、ミュートを解除すると音が出る。
+1. **Display** — Click **Connect to Bridge** to detect the model. **Connection is optional.**
+   The default is `go`; preview and export work without Bridge if the model is correct.
+2. **Source** — Click **Choose a video** or drop a video onto the surrounding area.
+   Import one video at a time. It uploads once; **layout and projection are detected
+   from the content**. **The first frame renders automatically** on the left.
+3. **Tune** — Use **Move to Looking Glass** to view it on the device, then adjust
+   convergence and depth strength.
+4. **Export** — Click **Export** when ready. Playback and download links appear when it finishes.
 
-**1 枚は 2 秒、動画全体はその 200 倍ほど掛かる。**先に 1 枚で詰める。
-プレビューは変換本体と同じ経路を通るので、**見えたものがそのまま焼き上がる。**
-長い動画は**開始**と**フレーム数**で切り出す。押す前に「開始 〜 終了の N フレーム」と
-書き出す範囲と枚数を確認できる。**フレーム数を空にすると動画の最後まで**焼く。
+During playback, use the volume slider and mute button below the image.
+Autoplay starts muted. Raise the volume or unmute to hear audio.
 
-書き出しは 1 件ずつ順番に処理する（CPU を使い切るので並列にすると全部遅くなる）。
-走らせたあとでも**中止**で止められる。書きかけの動画は残らない。
+**Rendering time depends on the machine, source, and settings.** Tune one frame first.
+Preview uses the same rendering path as conversion, so **the preview matches the export**.
+For long videos, select **Start** and **Frames** to export a portion. Before exporting,
+the app shows the frame range and count. **Leaving Frames empty exports to the end.**
 
-### 絵は勝手に描き直る
+Exports run one at a time; each uses the available CPU resources, so concurrent jobs
+would slow one another down. Click **Cancel** to stop a running job. Partial output is removed.
 
-- **収束面と視点**は再生側のシェーダーで効くので、動かすと即座に絵が変わる
-- **立体の強さ・視野角・フレーム**と「素材」の設定は視点を作り直すので、
-  スライダーを離すと**自動で 1 枚描き直す**（絵の左上に「描き直している…」と出る）
+### Preview updates automatically
 
-**スライダーには数値の欄が付いている。** 掴んで動かしても、欄に打ち込んでもよい
-（範囲の外の値は端に丸める。数として読めない値は赤くして弾く）。
+- **Convergence and view** use the playback shader, so their changes appear immediately.
+- **Depth strength, field of view, frame**, and **Source** settings rebuild the views.
+  Releasing a slider **automatically renders a new frame**, with a rendering message
+  at the top left of the image.
 
-収束面は「書き出す」でそのまま焼き込まれるので、数値を書き写す必要はない。
-何が焼かれるかは**内訳で出る**（「書き出しに入る収束面 4.75 px（自動 -2.50 ＋ 手動 7.25）」）。
-ずらし量が視点ごとの平行移動と等価なので、再生側と焼き込みで同じ絵になる
-（実測の残差 0.1 px 以下）。
+**Every slider has a numeric field.** Drag the slider or type a value.
+Out-of-range values are clamped; invalid numbers are rejected and shown in red.
 
-### ライブラリ — 残っているものを消す
+The convergence you see is baked into the export; no need to copy values manually.
+The app shows the **breakdown**, for example: “Convergence written into the export:
+4.75 px (auto -2.50 + manual 7.25)”. The offset is equivalent to a translation of
+each view, so playback and export produce the same image (measured residual below 0.1 px).
 
-上げた動画は `out/sources/`、書き出した quilt 動画は `out/jobs/` に残る。
-どちらも 1 本で数十 MB から数百 MB になるので、**画面の「ライブラリ」から一覧して消す。**
+### Library: manage stored files
 
-- **書き出した quilt 動画** — 再生・ダウンロード・削除。件数と合計の大きさも出る
-- **取り込んだ素材** — 「使う」で上げ直さずに調整へ戻せる（同じ動画を送り直さない）。
-  いま調整しているものは「調整中」と出る。**消すと左の絵も消える**
-- **失敗・中止したジョブ** — 消す以外にすることは無いので、名前と状態だけ出る
-- **消すのは 2 手**（「消す」→「はい」）。**変換中の素材は消せない**（読んでいる途中で失敗する）
+Uploaded videos remain in `out/sources/`; exported quilts remain in `out/jobs/`.
+Each can occupy tens or hundreds of MB. **List and delete them in the Library panel.**
 
-### 魚眼（VR180）の素材
+- **Exported quilts** — Play, download, or delete them; counts and total size are shown.
+- **Uploaded sources** — **Use** returns to tuning without uploading again.
+  The active source is marked as being tuned. **Deleting it also clears the image.**
+- **Failed or canceled jobs** — Only the name and status are shown, since deletion is the remaining action.
+- **Deletion takes two steps:** delete, then confirm. **A source cannot be deleted during conversion**
+  because the converter is still reading it.
 
-VR180 の素材は片眼ずつ 180° の魚眼像が丸く入っている。**これは平面のステレオ対ではない。**
-ステレオマッチングは同じ行に対応点がある前提で横だけを探すので、魚眼のままでは視差が合わず、
-絵がブレて見える。丸い絵の外の黒い縁もそのまま quilt に入る（実測でタイルの 22.9%）。
+### Fisheye footage (VR180)
 
-「素材」の**写り方**を `fisheye` にすると、円を片眼ずつ測って**中央の視野だけを平面へ直す**。
-黒い縁は入らない（実測 0.0%）。切り出す横の画角は「調整」の**視野角**で決める。
-狭いほど歪みが減り、広いほど周りまで写るが端が伸びる。
+VR180 footage contains a circular 180° fisheye image for each eye.
+**This is not a planar stereo pair.** Stereo matching searches horizontally for
+corresponding points on the same row. Without rectification, fisheye footage gives
+inconsistent disparity and a blurred result. The black border outside the circle
+also enters the quilt (22.9% of a tile in a measured sample).
 
-1080p の VR180 は 180° を 960 px で撮っているので**角解像度が 5.3 px/度**しかない。
-Go のタイルに 50° を出すと 7.4 px/度 要るので、どう変換しても甘い絵になる。
+Set **Projection** in **Source** to `fisheye`. The converter measures each eye's
+circle separately and **rectifies the central field of view onto a plane**.
+This removes the black border (0.0% in the measured sample). Set the horizontal
+crop angle with **Field of view** in **Tune**. Narrower angles reduce distortion;
+wider angles include more of the scene but stretch the edges.
 
-### 1'. CLI で変換する
+1080p VR180 records 180° across 960 pixels: only **5.3 pixels per degree**.
+Showing 50° in a Go tile needs 7.4 pixels per degree, so the image remains soft
+regardless of conversion quality.
 
-同じ変換を端末からも呼べる。まとめて回すときや引数を細かく詰めるときはこちら。
+### 1a. Convert with the CLI
+
+Use the same converter from a terminal for batch work or detailed parameter control.
 
 ```bash
-docker compose run --rm converter frame   samples/movie.mp4 --output-dir out   # 1 枚だけ試す
+docker compose run --rm converter frame   samples/movie.mp4 --output-dir out   # Try one frame
 docker compose run --rm converter convert samples/movie.mp4 --output-dir out
 
-# 魚眼（VR180）は写り方と視野角を渡す
+# Set projection and field of view for fisheye (VR180)
 docker compose run --rm converter convert samples/vr180.mp4 --projection fisheye --fov 50
 ```
 
-出力名は `<入力名>_qs<列>x<行>a<縦横比>.mp4` になる。ビューアはこの名前からレイアウトを読むので
-リネームしない。
+Output names follow `<input>_qs<columns>x<rows>a<aspect>.mp4`.
+The viewer reads the layout from this name, so do not rename it.
 
-覚えておくとよい引数（一覧は `--help`）:
+Useful options (see `--help` for the full list):
 
-| 引数 | 効くところ |
+| Option | Effect |
 | --- | --- |
-| `--display go\|portrait\|16\|32` | 機種のプリセット（既定は 16） |
-| `--layout sbs\|sbs-half\|tb\|tb-half\|separate` | 入力の左右の入り方（既定は sbs） |
-| `--fit crop\|pad` | 機種と縦横比が違うときの収め方（既定は crop = 切り落とす） |
-| `--span` | 視点の広がり。大きいほど立体感が増え、穴埋めの粗も増える |
-| `--convergence` | 画面と同じ奥行きに置く面の視差。`auto` は最初のフレームの中央値 |
-| `--work-dir` | 視差を保存して、やり直しのときに推定を省く（左右の向きの警告は初回だけ出る） |
+| `--display go\|portrait\|16\|32` | Display preset; CLI default: `16`. |
+| `--layout sbs\|sbs-half\|tb\|tb-half\|separate` | Input stereo layout; default: `sbs`. |
+| `--fit crop\|pad` | Fit mismatched aspect ratios; default: `crop`. |
+| `--span` | View span. Larger values increase depth and expose more hole-filling artifacts. |
+| `--convergence` | Disparity of the plane placed at screen depth. `auto` uses the first frame's median. |
+| `--work-dir` | Cache disparity to skip estimation when rerunning. |
 
-`frame` で `--span` と `--convergence` を詰めてから `convert` に移ると速い。
+Tune `--span` and `--convergence` with `frame` before running `convert`.
 
-変換の最初に視差の分布（中央値と 10〜90 パーセンタイル）と測光残差を表示する。
-残差はその視差で右眼の絵から左眼の絵をどれだけ再現できたかで、小さいほど視差が当たっている。
-**視差の符号は「画面よりどちら側か」を表す。** 正なら画面より手前、負なら奥。
-`--convergence` はここを 0 にしたい面の値を入れる。
+At the start of conversion, the CLI reports disparity statistics (median and
+10th–90th percentiles) and photometric residual. The residual measures how well
+the right-eye image reproduces the left-eye image using the estimated disparity;
+lower is better. Disparity is the horizontal coordinate difference `x_left - x_right`.
+The renderer subtracts `--convergence` before synthesizing views, so the raw sign alone
+does not determine depth relative to the output screen. Set `--convergence` to the disparity
+of the plane you want on the screen.
 
-**左右が逆に入っていても機械的には判定できない。** 入れ替えた対は「奥行きが反転した場面」の
-正しいステレオ対になるので、絵からは見分けがつかない。実機で見て視点の動きが逆なら
-`--swap-eyes` を付け直す。
+**Swapped eyes cannot be detected reliably from the images.** Swapping produces
+a valid stereo pair of a depth-reversed scene. If view movement looks reversed
+on the device, rerun with `--swap-eyes`.
 
-### 機種を確かめる
+### Check your display model
 
-Looking Glass Bridge を起動した状態で、画面の「ディスプレイ」の **Bridge に接続**を押すと
-機種と quilt のレイアウトが出る。`--display` はこれに合わせる。
+Start Looking Glass Bridge and click **Connect to Bridge** in **Display**.
+The app shows the model and quilt layout. Match `--display` to this model.
 
-| プリセット | 列 × 行 | 解像度 | タイルの縦横比 | 機種 |
-| --- | --- | --- | --- | --- |
-| `go` | 11 × 6 | 4092² | 0.5625（縦） | Looking Glass Go |
-| `portrait` | 8 × 6 | 3360² | 0.75（縦） | Looking Glass Portrait |
-| `16` | 5 × 9 | 4096² | 1.777（横） | Looking Glass 16" |
-| `32` | 5 × 9 | 8192² | 1.777（横） | Looking Glass 32" |
+| Preset / model | Quilt (columns × rows / resolution) | Tile aspect ratio |
+| --- | --- | --- |
+| `go` / Looking Glass Go | 11 × 6 / 4092² | 0.5625 (portrait) |
+| `portrait` / Looking Glass Portrait | 8 × 6 / 3360² | 0.75 (portrait) |
+| `16` / Looking Glass 16" | 5 × 9 / 4096² | 1.777 (landscape) |
+| `32` / Looking Glass 32" | 5 × 9 / 8192² | 1.777 (landscape) |
 
-**Go と Portrait は縦画面**なので、横長の素材は縦横比が合わない。既定の `--fit crop` は
-横幅を切り落として画面いっぱいに使い、`--fit pad` は上下に余白を足して素材を全部残す。
-16:9 の素材を Go に入れると、crop では横幅の 3 分の 1 しか残らない。
+**Go and Portrait have portrait tiles**, so landscape footage has a different
+aspect ratio. The default `--fit crop` trims the sides to fill the tile.
+`--fit pad` adds space above and below to preserve the whole source.
+Cropping 16:9 footage for Go retains roughly one third of its width.
 
-**既定を crop にしているのは、そのほうが立体感が強く出るため。** 切り出した範囲を画面いっぱいに
-拡大するので、被写体が大きくなり視差も同じ倍率で増える（Big Buck Bunny のサンプルでは視差の幅が
-pad の 5 px に対して crop は 15 px）。全体を見せたいときは pad にして `--span` を上げる。
+**Crop is the default because it produces stronger depth.** Enlarging the cropped
+region also enlarges disparity. In the Big Buck Bunny sample, disparity spanned
+15 px with crop versus 5 px with pad. To show the full image, use pad and increase `--span`.
 
-### 2. ブラウザで再生する
+### 2. Play in the browser
 
-- 画面で変換したものは**ここで再生する**でそのまま開く
-- 手元の mp4 をファイル選択で渡すと、視点を 1 枚ずつ（single）と quilt 全体を確認できる
-- `out/` は開発サーバーからも配っているので、`http://localhost:5173/out/<名前>.mp4` を
-  URL 欄に入れても読み込める。この形なら Bridge の cast にもそのまま渡せる
-- 動画は絵の下の**再生 / 一時停止とシーク**で操作する（生の 4092² の動画は画面に出さない）
-- **lenticular** は Looking Glass の実画素に合わせた表示なので、通常のモニタでは縞模様に見えるのが正しい
+- After converting in the app, click **Play it** to open the result.
+- Select a local MP4 to inspect individual views (**single**) or the whole quilt.
+- The development server also serves `out/`. Enter `http://localhost:5173/out/<name>.mp4`
+  in the URL field to load it.
+- Use **play/pause and seek** below the image; the raw 4092² video is not shown directly.
+- **lenticular** maps views to Looking Glass's physical pixels. Stripes on a regular monitor are expected.
 
-### うまくいかないとき
+### Troubleshooting
 
-- **絵が真っ二つに切れている**: 入力の並びが違う。自動判定は外れることがあるので手で選び直す
-- **API が返らない・遅い**: `localhost:5173` を別プロジェクトでも使っていると、そちらの
-  Service Worker が残って fetch を横取りする。このアプリは開いた時点で外すので、
-  **一度リロードすれば直る**
-- **奥行きが平らに見える**: 模様の無い被写体はステレオマッチングで視差が決まらない。
-  変換のログに出る測光残差が大きい（10 を超える）なら視差が当たっていない
-- **絵の周りに黒い縁が入る・全体がブレて見える**: 魚眼（VR180）の素材を平面として読んでいる。
-  「素材」の**写り方**を `fisheye` にする
-- **途中で「ffmpeg が落ちた」と出て失敗する**: Docker に割り当てたメモリが足りない。
-  変換は約 2 GB 使う（4092² のエンコードだけで 1.5 GB）。他のプロジェクトのコンテナを止めるか、
-  Docker Desktop の割り当てを増やす。**毎回同じ枚数で落ちるのが目印**
-- **書き出しが終わらない**: フレーム数を空にすると開始位置から動画の最後までを焼く。
-  60 fps の素材では 1 分で 3600 フレーム（実測で 1 枚 0.5 秒 → 30 分）。先に短く切って試す
+- **The image is split in half:** the input layout is wrong. Detection can fail; select it manually.
+- **The API hangs or is slow:** another project using `localhost:5173` may have left
+  a Service Worker that intercepts fetch requests. This app unregisters it on startup;
+  **reload once** to resolve that case.
+- **Depth looks flat:** stereo matching cannot resolve disparity on textureless surfaces.
+  A large photometric residual in the conversion log (above 10) indicates a poor match.
+- **Black borders or a blurred image:** fisheye (VR180) footage is being treated as planar.
+  Set **Projection** in **Source** to `fisheye`.
+- **Conversion fails with an ffmpeg exit error:** Docker may have insufficient memory.
+  Measured conversion usage is about 2 GB, including 1.5 GB for 4092² encoding alone.
+  Stop other containers or increase Docker Desktop's memory allocation.
+  Failure at the same frame count each time is a useful clue.
+- **Export never seems to finish:** an empty Frames field exports from Start to the end.
+  One minute at 60 fps contains 3,600 frames. At a measured 0.5 seconds per frame,
+  that took 30 minutes; speed varies by machine and settings. Try a short portion first.
 
-## 実機で確認する
+## Validate on hardware
 
-Looking Glass Bridge を起動してから、上の開発サーバーを開く。
+Start Looking Glass Bridge, then open the development server described above.
 
-1. 「ディスプレイ」の **Bridge に接続**を押す。機種が一覧に出たら選ぶ
-2. quilt 動画のレイアウトが機種と噛み合っていないと警告が出る。出たら書き出し直す
-3. **Looking Glass へ移す**を押すと別窓が開く。その窓を Looking Glass 側へ動かして全画面にする
-4. 視点が逆に動く（手前のものが奥に見える）場合は、「素材」の**左右を入れ替える**を入れる
-5. 手前に出すぎ・奥に沈みすぎは「調整」の**収束面**で合わせる（描き直さずに変わる）
-6. 立体感が弱いときは「調整」の**立体の強さ**を上げる。上げるほど
-   遮蔽の穴埋めの粗も増えるので、実機で見ながら決める
+1. Click **Connect to Bridge** in **Display** and select the detected model.
+2. If a warning says the quilt layout does not match the model, export it again for that model.
+3. Click **Move to Looking Glass**. Move the new window onto the display, then
+   **double-click inside that window** to make it full screen.
+4. If view movement is reversed or foreground objects appear behind, enable **Swap left and right** in **Source**.
+5. Adjust **Convergence** in **Tune** if the scene sits too far forward or back. This updates without rerendering.
+6. Increase depth strength in **Tune** if the effect is weak. Higher values expose
+   more occlusion-filling artifacts, so judge the tradeoff on the device.
 
-Bridge の再生窓に渡す（cast）経路も「ディスプレイ」に置いてある。Bridge は別プロセスなので、
-ブラウザで選んだファイルは渡せない。http(s) の URL か、Bridge から見えるファイルパスの
-quilt を開いてから使う。
+## Development
 
-## 開発
-
-機械チェックはローカルの経路で走らせる。Docker のイメージは実行専用で、lint とテストの
-道具を入れていない。
+Run checks locally. The Docker images are for execution and do not include lint
+or test dependencies. Run these commands from the repository root:
 
 ```bash
-cd converter && uv run poe check   # ruff format → ruff check → mypy → pytest
-cd converter && uv run poe format  # 整形の崩れを直す
+(cd converter && uv run poe check)   # ruff format --check → ruff check → mypy → pytest
+(cd converter && uv run poe format)  # Fix formatting
 
-cd viewer && npm run dev           # 開発サーバー
-cd viewer && npm run check         # format:check → typecheck → lint → build → test
-cd viewer && npm run format        # 整形の崩れを直す
+(cd viewer && npm run dev)           # Development server
+(cd viewer && npm run check)         # format:check → typecheck → lint → build → test
+(cd viewer && npm run format)        # Fix formatting
 ```
 
-Docker で編集しながら動かすときの注意が 2 つある。
+The figures in this README are conversion output, so a change to the pipeline makes
+them stale. Rebuild them after preparing the sample with `scripts/fetch-sample.sh`:
 
-- `viewer/` のソースはマウントしているので保存すれば HMR が効く。ただし Windows で
-  `C:\` 側（`/mnt/c`）に置くとファイルの変更が届かない。その場合は
-  `VITE_USE_POLLING=1 docker compose up` で拾わせる
-- `viewer/package.json` を触ったら `docker compose down -v` でボリュームを捨ててから
-  `docker compose up --build` する。`node_modules` は名前付きボリュームなので、
-  イメージを作り直しても中身が入れ替わらない
+```bash
+converter/.venv/bin/python scripts/make-readme-media.py   # docs/media/*
+```
 
-AI エージェント向けの運用ルール・検証フロー・設計判断は [CLAUDE.md](CLAUDE.md) を参照。
-`.claude/` は Claude Code 用の設定（レイヤ別の規約・レビュー観点・スキル）。
-人が読むコントリビュートガイドとしても使えるように書いている。
+The screenshot of the app is taken by hand; the script does not produce it.
 
-## 状態
+When developing through Docker:
 
-変換と再生をひととおり実装した。**Looking Glass 実機での見え方は未確認。**
+- `viewer/` source is mounted, so saves trigger HMR. On Windows, files under `C:\`
+  (`/mnt/c`) may not send change events. Use `VITE_USE_POLLING=1 docker compose up` in that case.
+- After changing `viewer/package.json`, remove the volumes with `docker compose down -v`,
+  then run `docker compose up --build`. `node_modules` uses a named volume;
+  rebuilding the image alone does not replace its contents.
 
-合成したステレオ動画では、視差の推定値と視点間の移動量が理論値どおりになることまで確認している。
-実機で確かめるのは、立体に見えるか・視点の並びが逆になっていないか・外挿した端の視点の粗さが
-許容できるか。
+[CLAUDE.md](CLAUDE.md) is authoritative for agent operating rules, checks, and design decisions.
+Claude Code and Codex share the rules, review criteria, and skills in `.claude/`.
+Those documents exist only in English; this README is the only translated document.
 
-## ライセンス
+## Status
+
+Conversion and playback are implemented. **Visual quality on Looking Glass hardware
+has not been fully validated.**
+
+Synthetic stereo tests confirm that estimated disparity and movement between views
+match theoretical values. Hardware validation must establish whether depth looks
+correct, view order is right, and artifacts at extrapolated edge views are acceptable.
+
+For the same reason there is no photograph of the display here yet. The figures above
+are conversion output, not a picture of a Looking Glass showing it.
+
+## License
 
 [MIT License](LICENSE)
 
-`scripts/fetch-sample.sh` が取得する Big Buck Bunny は
-(c) copyright 2008, Blender Foundation / [peach.blender.org](https://peach.blender.org/) で、
-Creative Commons Attribution 3.0 の下で公開されている。取得した動画はリポジトリに含めない。
+Big Buck Bunny, downloaded by `scripts/fetch-sample.sh`, is
+(c) copyright 2008, Blender Foundation / [peach.blender.org](https://peach.blender.org/),
+released under [Creative Commons Attribution 3.0](https://creativecommons.org/licenses/by/3.0/). The downloaded video itself is not
+included in this repository, but the figures in `docs/media/` are converted from it
+and are covered by the same license and attribution.
 
-Looking Glass は Looking Glass Factory, Inc. の商標。本プロジェクトは同社とは無関係の非公式なツールで、同社による承認・支援を受けていない。
+Looking Glass is a trademark of Looking Glass Factory, Inc. This is an unofficial
+project, unaffiliated with and not endorsed or supported by the company.

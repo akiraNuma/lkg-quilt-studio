@@ -1,11 +1,7 @@
 import { onUnmounted, ref } from 'vue'
 import { t } from '../i18n'
 import type { Calibration } from '../lenticular'
-import {
-  viewCount,
-  type DisplayQuilt,
-  type QuiltLayout,
-} from '../quilt'
+import type { DisplayQuilt } from '../quilt'
 
 export type BridgeStatus =
   'idle' | 'connecting' | 'connected' | 'unavailable'
@@ -25,8 +21,8 @@ type BridgeClient = ReturnType<
 >
 
 /**
- * Looking Glass Bridge との接続。キャリブレーション値の取得と、
- * quilt を Bridge の再生窓へ cast する経路の両方をここに集める。
+ * Looking Glass Bridge との接続。実機のキャリブレーション値と、Bridge が
+ * Looking Glass 用の窓を置いている画面座標を取るために使う。
  */
 export function useBridge() {
   const status = ref<BridgeStatus>('idle')
@@ -69,14 +65,40 @@ export function useBridge() {
     }
   }
 
+  /**
+   * 繋がっている Bridge から画面を取り直す。取得に失敗したら 1 度だけ繋ぎ直す。
+   *
+   * bridge.js の `connect()` は `isConnected` が立っていると orchestration を
+   * 取り直さず、`getDisplays()` は保存済みの orchestration を送るだけ。だから
+   * Bridge 側で orchestration が無効になると（Bridge の再起動、他のクライアントの
+   * 接続）取得が失敗し続け、再検出を押しても永久に直らない
+   */
   async function refresh(): Promise<void> {
     if (client === null) return
-    const found = await client.getDisplays()
-    if (!found.success || found.response === null) {
+    if (await readDisplays()) return
+    await client.disconnect()
+    const again = await client.connect()
+    if (!again.success) {
       displays.value = []
-      message.value = t('bridge.notFound')
+      status.value = 'unavailable'
+      message.value = t('bridge.unavailable')
       return
     }
+    status.value = 'connected'
+    if (!(await readDisplays())) {
+      displays.value = []
+      message.value = t('bridge.unavailable')
+    }
+  }
+
+  /**
+   * 画面の一覧を取れたら true。**繋がっているのに 1 台も無い場合も true。**
+   * 通信の失敗（繋ぎ直せば直る）と、実機が無いこと（繋ぎ直しても直らない）を分ける
+   */
+  async function readDisplays(): Promise<boolean> {
+    if (client === null) return false
+    const found = await client.getDisplays()
+    if (!found.success || found.response === null) return false
     displays.value = found.response.map((display, order) => ({
       // 同梱の .d.ts は index / windowCoords を BridgeValue と宣言しているが、
       // 実装（tryParseDisplay）は全フィールドを unwrap して返す。上流の型バグ
@@ -87,34 +109,10 @@ export function useBridge() {
       quilt: display.defaultQuilt,
       windowCoords: asPoint(display.windowCoords),
     }))
-    if (displays.value.length === 0) {
-      message.value = t('bridge.notFound')
-    }
-  }
-
-  /** quilt を Bridge の再生窓に渡す。uri は http(s) かローカルのファイルパス。 */
-  async function cast(
-    uri: string,
-    layout: QuiltLayout
-  ): Promise<boolean> {
-    if (client === null || bridge === null) {
-      message.value = t('bridge.needConnect')
-      return false
-    }
-    const hologram = new bridge.QuiltHologram({
-      uri,
-      settings: {
-        columns: layout.columns,
-        rows: layout.rows,
-        aspect: layout.aspect,
-        viewCount: viewCount(layout),
-      },
-    })
-    const result = await client.cast(hologram)
-    message.value = result.success
-      ? t('bridge.castOk', { uri })
-      : t('bridge.castFailed', { uri })
-    return result.success
+    // 前回の失敗を残すと、繋がった後も警告が居座る
+    message.value =
+      displays.value.length === 0 ? t('bridge.notFound') : null
+    return true
   }
 
   async function disconnect(): Promise<void> {
@@ -134,7 +132,6 @@ export function useBridge() {
     displays,
     connect,
     refresh,
-    cast,
     disconnect,
   }
 }

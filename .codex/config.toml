@@ -1,4 +1,4 @@
-# 運用の正本は CLAUDE.md。AGENTS.md が優先される場合はそこから読む。
+# CLAUDE.md is authoritative; when AGENTS.md takes precedence, follow its references.
 project_doc_fallback_filenames = ["CLAUDE.md"]
 
 approval_policy = "never"

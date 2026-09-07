@@ -1,34 +1,34 @@
-# Codex のプロジェクト入口
+# Codex project entry point
 
-作業前に [CLAUDE.md](CLAUDE.md) と `.claude/rules/documentation.md` を読む。
-運用・検証フロー・設計判断の正本はこれらのファイルとする。
-このファイルには Codex からの読み込み手順だけを置く。
+Read [CLAUDE.md](CLAUDE.md) and `.claude/rules/documentation.md` before working.
+They are the authoritative sources for operations, validation, and design decisions.
+This file contains only Codex loading instructions.
 
-## 作業対象に応じて読むルール
+## Rules to read for each task
 
-共通 hook が常時ルールと `paths:` の一致するルールを渡す。
-hook が未信頼・無効なら、以下の参照先を自分で読む。
-ルートから作業するときも、編集前に対象のルールを読む。
+The shared hook supplies unconditional rules and rules matching `paths:`.
+If hooks are untrusted or disabled, read the references below yourself.
+Read the applicable rules before editing, including when working from the repository root.
 
-| 作業対象 | 読むファイル |
+| Scope | Read |
 | --- | --- |
 | `viewer/` | `.claude/rules/viewer-vue.md` |
 | `converter/` | `.claude/rules/converter-python.md` |
-| Looking Glass の仕様・モデル・外部 API | `.claude/rules/external-apis.md` |
+| Looking Glass specifications, models, or external APIs | `.claude/rules/external-apis.md` |
 
-## スキルとレビュー
+## Skills and review
 
-- `.agents/skills/` は `.claude/skills/` への相対リンクとする。
-  手順の正本をコピーして二重管理しない。
-- コード変更後は `CLAUDE.md` の機械チェックを通す。
-  続いて `.agents/skills/review-loop/SKILL.md` を読み、レビューを実行する。
-- ハーネス変更時は `.agents/skills/harness-audit/SKILL.md` を読む。
-  今回変更した入口・参照・設定を対象に整合性を確認する。
-- Codex のレビュー担当は `.codex/agents/code_reviewer.toml`。
-  名前付き担当を選べない環境では、通常のサブエージェントに
-  `.claude/agents/code-reviewer.md` を読ませ、読み取り専用でレビューさせる。
+- `.agents/skills/` contains relative links to `.claude/skills/`.
+  Do not copy the authoritative procedures into a second managed source.
+- After code changes, pass the mechanical checks in `CLAUDE.md`.
+  Then read `.agents/skills/review-loop/SKILL.md` and run the review.
+- For harness changes, read `.agents/skills/harness-audit/SKILL.md`.
+  Check the consistency of the entry points, references, and settings changed in this task.
+- The Codex reviewer is `.codex/agents/code_reviewer.toml`.
+  If named agents are unavailable, ask a regular subagent to read
+  `.claude/agents/code-reviewer.md` and review without editing files.
 
-権限と hook の正本は `.claude/settings.json`。
-`python3 scripts/sync-harness.py` で Codex 用の機械設定を生成する。
-`scripts/check-harness.sh` で同期・参照・入力形式を検証する。
-実行権限モードと hook の信頼設定は、クライアント側の設定に従う。
+The authority for permissions and hooks is `.claude/settings.json`.
+Generate Codex machine settings with `python3 scripts/sync-harness.py`.
+Validate synchronization, references, and input formats with `scripts/check-harness.sh`.
+Execution permission modes and hook trust follow the client's settings.

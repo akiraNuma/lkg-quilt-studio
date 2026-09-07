@@ -1,69 +1,85 @@
-# ドキュメント・コメントの SSoT 原則（常時ロード）
+# Single source of truth for documentation and comments (always loaded)
 
-## 置き場所（1 情報 = 1 箇所）
+## Where information belongs (one fact, one authority)
 
-| 情報 | 置き場所 |
+| Information | Location |
 | --- | --- |
-| セットアップ手順・CLI の使い方・実機確認の手順 | `README.md` |
-| AI 向けの運用・検証フロー・設計判断の WHY | `CLAUDE.md` |
-| Codex の読み込み入口・条件別の参照先 | `AGENTS.md` |
-| Codex のスキル発見・レビュー担当の登録 | `.agents/skills/` の相対リンク / `.codex/agents/*.toml` |
-| コマンド権限・hook の定義 | `.claude/settings.json`（Codex 用設定は `scripts/sync-harness.py` で生成） |
-| Codex の実行設定・実行権限モード | `.codex/config.toml`（Git で共有） |
-| レイヤ別のコーディング規約 | `.claude/rules/*.md`（共通 hook が条件ロード、未信頼時は `AGENTS.md` から読む） |
-| 外部リファレンス URL・モデル候補・既知の制限 | `.claude/rules/external-apis.md` |
-| レビュー観点 | `.claude/agents/code-reviewer.md`（正本、複製禁止） |
-| ツールのバージョン | `.mise.toml` |
-| Python の整形・lint 設定 | `converter/pyproject.toml`（ruff） |
-| Web の整形ルール | `viewer/.prettierrc` |
-| Web の lint 設定 | `viewer/eslint.config.js` |
-| 画面の配色・フォームの見た目・共通クラス | `viewer/src/styles.css` |
-| 画面の文言（日本語 / 英語） | `viewer/src/i18n.ts` |
+| Setup, CLI usage, and hardware validation | `README.md` |
+| Agent operations, validation workflow, and design rationale | `CLAUDE.md` |
+| Codex entry point and conditional references | `AGENTS.md` |
+| Codex skill discovery and reviewer registration | Relative links in `.agents/skills/` / `.codex/agents/*.toml` |
+| Command permissions and hook definitions | `.claude/settings.json` (generate Codex settings with `scripts/sync-harness.py`) |
+| Codex execution settings and permission mode | `.codex/config.toml` (tracked in Git) |
+| Layer-specific coding conventions | `.claude/rules/*.md` (shared hooks load conditionally; use `AGENTS.md` when untrusted) |
+| External reference URLs, candidate models, and known limitations | `.claude/rules/external-apis.md` |
+| Review criteria | `.claude/agents/code-reviewer.md` (authoritative; no independent copies) |
+| README figures and how to rebuild them | `scripts/make-readme-media.py` (output in `docs/media/`) |
+| Tool versions | `.mise.toml` |
+| Python formatting and lint settings | `converter/pyproject.toml` (ruff) |
+| Same settings for `scripts/` | `ruff.toml` at the root (extends the file above) |
+| Web formatting rules | `viewer/.prettierrc` |
+| Web lint settings | `viewer/eslint.config.js` |
+| UI palette, form appearance, and shared classes | `viewer/src/styles.css` |
+| UI text (Japanese / English) | `viewer/src/i18n.ts` |
 
-- コードから grep で導出できる情報（ディレクトリ構成の詳細、CLI の引数一覧、型定義）を
-  ドキュメントに転記しない
-- ドキュメントは常に現在形で書く。「旧: 〜 → 変更」のような履歴を本文に積まない（履歴は git log）
-- 手順・仕様を変えたら、対応するドキュメントを同じ変更内で直す
+- Do not transcribe information derivable by searching code, such as detailed directory trees,
+  complete CLI argument lists, or type definitions.
+- Describe the current state. Keep change history in git log, not in the document body.
+- Update the corresponding documentation in the same change as a procedure or specification.
 
-## 整形はフォーマッタに任せる
+## English authority and the one Japanese translation
 
-インデント・改行・クォートの議論をしない。Python は `ruff format`、Web は Prettier を実行して従う。
-**lint に整形ルールを足さない**（フォーマッタと競合して直し合いになる）。
-lint はバグと規約違反、フォーマッタは見た目、と担当を分ける。
+Every instruction document — `README.md`, `CLAUDE.md`, `AGENTS.md`, and `.claude/**` — is English only.
+**Do not translate instruction documents.** Agents read English, so a translated rule has no reader,
+while every English edit would require a second edit to keep the pair honest.
+Instruction language does not change the user's conversation language or the code-comment policy below.
 
-**フォーマッタが見るのは `converter/` と `viewer/` の中だけ。** リポジトリ直下の md
-（`CLAUDE.md` / `.claude/**` / `README.md`）は機械チェックの対象外なので、崩れていても分からない。
+`README.ja.md` is the sole exception, because setup and usage are written for people and this repository
+is public. Update it in the same change as `README.md`, then run
+`python3 scripts/check-translations.py --record` after checking that both languages say the same thing.
+`scripts/check-harness.sh` reports drift since that review. Hashes detect unreviewed changes;
+they do not prove translation accuracy.
 
-## コードコメント — 「書かない」が既定
+## Let formatters handle formatting
 
-型・関数名・スキーマで読めることに注釈を重ねない。
+Do not debate indentation, line breaks, or quotes. Follow `ruff format` for Python and Prettier for Web.
+**Do not add formatting rules to lint.** Conflicting tools otherwise undo each other's work.
+Lint checks bugs and convention violations; formatters handle appearance.
 
-- **付けるのは「有能な開発者が読んで一瞬 "なぜ?" と止まる」ところだけ**:
-  - **WHY**: その実装を選んだ理由
-  - **非自明な外部仕様**: quilt のレイアウト規約・キャリブレーション値・モデルの入出力の癖。
-    出典 URL を添える
-  - **落とし穴**: 一見不要に見えるが消すと壊れるコードの理由
-- **1 行が基準。** 3 行以上書きたくなったら、WHAT を説明していないか疑う
-- 書かないもの: コードを日本語に訳した行コメント、grep で分かる情報、変更経緯・TODO の墓場
-- 言語は日本語コメントで統一する
+**Formatters cover only `converter/` and `viewer/`.** Root Markdown and harness documents
+(`CLAUDE.md`, `.claude/**`, `README.md`) are not checked for formatting by mechanical checks.
 
-## ハーネス自己改善のトリガー
+## Code comments: omit by default
 
-以下が起きたら、そのセッション中に該当ファイルへ反映する:
+Do not repeat information already expressed by types, function names, or schemas.
 
-| トリガー | アクション |
+- Comment only where a capable developer would pause and ask why:
+  - **WHY:** the reason for an implementation choice.
+  - **Non-obvious external specifications:** quilt layout, calibration, or model I/O quirks.
+    Include the source URL.
+  - **Traps:** why seemingly unnecessary code is required.
+- **One line is the default.** If you need three or more, check whether you are explaining WHAT.
+- Omit line-by-line translations of code, searchable facts, change histories, and abandoned TODOs.
+- Keep code comments in Japanese.
+
+## Harness self-improvement triggers
+
+Apply these updates within the session in which they occur:
+
+| Trigger | Action |
 | --- | --- |
-| ユーザーから作業方針の指摘・修正を受けた | 再発防止の 1〜3 行を `CLAUDE.md` か該当 rules に追記 |
-| 書いてあるコマンドが動かなかった | 正しい形に書き直す |
-| 非自明な落とし穴を踏んだ | 該当する rules の関連節に 1 行反映する |
-| 同じ説明を 2 回以上ユーザーにさせた | その内容をハーネスに書いて 3 回目を防ぐ |
-| 実態と違う記述を見つけた | 直すか消す（確信がなければユーザーに確認） |
+| The user corrects a working policy | Add 1–3 lines preventing recurrence to `CLAUDE.md` or the relevant rule |
+| A documented command fails | Replace it with the correct command |
+| A non-obvious trap occurs | Add one line to the relevant rule section |
+| The user has to explain the same thing twice | Record it in the harness to prevent a third explanation |
+| Documentation contradicts reality | Correct or remove it; ask the user if the correct behavior is uncertain |
 
-## 追記するときの規律
+## Discipline when adding instructions
 
-- **書くのは、賢いエージェントでも知りようがないことだけ** — このプロジェクト固有の事実、
-  一度踏んだ非自明な罠、人間が下した決定。一般論（「推測で書かない」の類）は増やさない
-- **観測された失敗 1 件につき 1 エントリ。** 予防的な一般論を先回りで書かない
-- 同種の指摘が **2 回目**になったら、文章での注意書きをやめて計算的センサー（lint ルールの追加）
-  への昇格を検討する
-- 追記したら既存記述との重複・矛盾を確認し、古い方を消す。置き場所は上の表に従う
+- Record only facts a capable agent could not otherwise know: project-specific facts,
+  observed non-obvious traps, and human decisions. Do not accumulate generic advice.
+- **One observed failure, one entry.** Do not add speculative warnings in advance.
+- On the second occurrence of the same issue, consider a mechanical check (such as a lint rule)
+  instead of another prose warning.
+- Check additions for duplication and conflicts, and remove superseded instructions.
+  Use the ownership table above to choose the location.

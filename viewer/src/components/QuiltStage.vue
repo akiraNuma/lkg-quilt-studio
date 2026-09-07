@@ -161,7 +161,8 @@ function start(): void {
  * 窓を移す方法は公式ポリフィルと同じ。
  *
  * `rect` は位置の希望でしかない。ブラウザは Window Management 権限が無いと
- * ポップアップを今の画面内へ丸めるので、別画面へは手で動かしてもらう
+ * ポップアップを今の画面内へ丸めるので、別画面へは手で動かしてもらう。
+ * 全画面はその窓の中のユーザー操作が要るので、ダブルクリックで切り替える
  */
 function openWindow(rect: {
   x: number
@@ -184,10 +185,25 @@ function openWindow(rect: {
   opened.document.body.append(canvas.value)
   opened.addEventListener('pagehide', closeWindow)
   opened.addEventListener('resize', fitToPopup)
+  opened.addEventListener('dblclick', toggleFullscreen)
   popup = opened
   poppedOut.value = true
   renderer?.setLoopWindow(opened)
   fitToPopup()
+}
+
+/**
+ * 別窓を全画面に出し入れする。`requestFullscreen()` はその窓の中のユーザー操作を
+ * 要求するので、元の窓のボタンからは呼べない。窓の中のダブルクリックで呼ぶ
+ */
+function toggleFullscreen(): void {
+  const opened = popup
+  if (opened === null) return
+  if (opened.document.fullscreenElement === null) {
+    void opened.document.documentElement.requestFullscreen()
+  } else {
+    void opened.document.exitFullscreen()
+  }
 }
 
 function closeWindow(): void {
@@ -197,6 +213,7 @@ function closeWindow(): void {
   poppedOut.value = false
   sizeNote.value = null
   opened.removeEventListener('resize', fitToPopup)
+  opened.removeEventListener('dblclick', toggleFullscreen)
   renderer?.setLoopWindow(window)
   if (canvas.value !== null) {
     canvas.value.style.removeProperty('width')

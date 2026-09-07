@@ -9,14 +9,12 @@ defineProps<{
   status: BridgeStatus
   message: string | null
   displays: BridgeDisplay[]
-  castUri: string | null
 }>()
 
 defineEmits<{
   connect: []
   refresh: []
   disconnect: []
-  cast: []
 }>()
 
 const selected = defineModel<number>('selected', { required: true })
@@ -87,15 +85,6 @@ const STATE_KEY: Record<BridgeStatus, MessageKey> = {
         </label>
       </li>
     </ul>
-
-    <p v-if="status === 'connected'" class="row">
-      <button :disabled="castUri === null" @click="$emit('cast')">
-        {{ t('display.cast') }}
-      </button>
-      <span v-if="castUri === null" class="note">
-        {{ t('display.castHint') }}
-      </span>
-    </p>
   </section>
 </template>
 

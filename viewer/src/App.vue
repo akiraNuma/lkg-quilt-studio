@@ -189,12 +189,6 @@ function resetView(): void {
   shift.value = 0
   centerView()
 }
-
-function castToBridge(): void {
-  const uri = source.value?.castUri
-  if (uri == null || source.value === null) return
-  void bridge.cast(uri, source.value.layout)
-}
 </script>
 
 <template>
@@ -235,11 +229,9 @@ function castToBridge(): void {
         :status="bridge.status.value"
         :message="bridge.message.value"
         :displays="bridge.displays.value"
-        :cast-uri="source?.castUri ?? null"
         @connect="void bridge.connect()"
         @refresh="void bridge.refresh()"
         @disconnect="void bridge.disconnect()"
-        @cast="castToBridge"
       />
 
       <SourcePanel

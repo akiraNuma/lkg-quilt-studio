@@ -3,62 +3,64 @@ paths:
   - "converter/**/*.py"
 ---
 
-# 変換 CLI（Python + uv）コーディング規約
+# Conversion CLI (Python + uv) coding rules
 
-検証はホストで実行する:
+Run checks on the host:
 
 ```bash
-cd converter && uv run poe check    # ruff format --check → ruff check → mypy → pytest
-cd converter && uv run poe format   # 整形の崩れを直す
+(cd converter && uv run poe check)    # ruff format --check → ruff check → mypy → pytest
+(cd converter && uv run poe format)   # Fix formatting
 ```
 
-依存の追加は `uv add`（開発用は `uv add --dev`）。`pyproject.toml` と `uv.lock` を手で書かない。
+Add dependencies with `uv add` (`uv add --dev` for development dependencies).
+Do not edit `pyproject.toml` or `uv.lock` by hand.
 
-**Python 本体は uv が管理する（`uv python install`）。mise で python を入れない。**
-mise の python は free-threaded ビルドを掴むことがあり、`lib` ディレクトリが無い状態で入って壊れる
-（"Python installation is missing a lib directory" で落ちる）。uv は GIL 有りのビルドを選ぶ。
+**uv manages Python itself (`uv python install`). Do not install Python through mise.**
+mise can select a free-threaded build that installs without a `lib` directory and fails with
+"Python installation is missing a lib directory". uv selects a build with the GIL.
 
-## 方針
+## Principles
 
-- **型ヒントを付ける**（mypy が通る範囲で）。`Any` に逃げる場合は理由をコメントで書く
-- **1 段階 = 1 モジュール**にする（視差推定 / 視点合成 / quilt レイアウト / エンコード）。
-  段階ごとに中間成果（深度マップ・視点画像）をファイルに落とせる形を保つ。
-  途中でやり直せないと、重い処理を毎回全部やり直すことになる
-- **I/O 境界（動画の読み書き・ffmpeg 呼び出し・モデルの重みの読み込み）のエラーは厚く扱う。**
-  失敗したら何が悪かったか（パス・コーデック・形状）をメッセージに含めて落とす。
-  内部関数どうしの呼び出しは trust する
-- **重い処理には進捗を出す。** フレーム単位のループは総フレーム数と現在位置を表示する
-- モデルの重み・入出力の実データはリポジトリに入れない（`.gitignore` 済み）
+- **Add type hints** sufficient to pass mypy. Explain any use of `Any` in a comment.
+- **Use one module per stage** (disparity estimation / view synthesis / quilt layout / encoding).
+  Keep each stage capable of saving intermediate results (depth maps and view images) to files.
+  Without a way to restart partway through, every retry repeats all the expensive work.
+- **Handle errors thoroughly at I/O boundaries** (video reads/writes, ffmpeg calls, model weight loading).
+  Fail with a message that identifies the problem, including the path, codec, or shape as appropriate.
+  Trust calls between internal functions.
+- **Report progress for expensive work.** Frame loops must show the total frame count and current position.
+- Do not commit model weights or actual input/output data (already covered by `.gitignore`).
 
-## Python 3.14 の構文（見間違えた）
+## Python 3.14 syntax (previously misread)
 
-**`except ValueError, TypeError:` は正しい構文。** Python 3.14 の PEP 758 で括弧が省けるようになり、
-`ruff format` は括弧を**外す**方向へ整形する。Python 2 の構文と見た目が同じなので壊れて見えるが、
-括弧を付け直すと `ruff format --check` が落ちる。整形はフォーマッタに従う。
+**`except ValueError, TypeError:` is valid syntax.** PEP 758 in Python 3.14 makes the parentheses optional,
+and `ruff format` **removes** them. It resembles Python 2 syntax and can look broken,
+but restoring the parentheses makes `ruff format --check` fail. Follow the formatter.
 
-## ffmpeg の落とし穴（踏んで直したもの）
+## ffmpeg pitfalls encountered and fixed
 
-- **`-shortest` は音声が要求範囲より短いと、ストリーム 0 本の mp4 を終了コード 0 で書き出す。**
-  `--start` が音声の長さを越えた場合などに起きる。尺は `-t` で明示し、足りない音声は
-  `-af apad` で無音を継ぎ足す（`video.py` の `mux_audio`）
-- **書き出したフレーム数を数えて 0 なら落とす。** ffmpeg は 1 フレームも来なくても成功で終わる
-- **フレーム番号で頭出しするとき `trim` フィルタを使うと、頭から全部デコードする。**
-  2 万フレーム先で 1.82s、`-i` より前の `-ss` なら 0.20s（同じ画素が返ることを実測で確認）。
-  今の ffmpeg の入力側 `-ss` はキーフレームに丸まらない。半フレーム手前を狙って丸め上がりを防ぐ。
-  フレーム番号と時刻の対応は一定フレームレート前提（`video.py` の `read_frames`）
-- **quilt は 1 フレームが巨大なので、x264 の既定設定ではメモリが足りない。**
-  4092² は yuv420p で 1 枚 25 MB。x264 は先読みとスレッドごとにフレームを抱えるので
-  実測 2.66 GB 使い、コンテナのメモリ上限に当たって**カーネルに殺される**。
-  症状は「ffmpeg が落ちた」だけで **stderr が空**（殺されるので何も書けない）。
-  `docker inspect` の `State.OOMKilled` で確かめる。フレーム数を増やすと**毎回同じ枚数で落ちる**
-  ので、コードのバグに見える（実測で 82 枚目）。`rc-lookahead=10:sliced-threads=1` で 1.55 GB に下がる
-- **回転メタデータ付きの入力は `-noautorotate` を付けないと、出力の縦横が ffprobe の値と入れ替わる。**
-  バイト数が一致してしまうので `reshape` は通り、画像が崩れたまま先へ進む
-- **`ffmpeg -metadata:s:v rotate=0` では回転メタデータは消えない**（今の ffmpeg は displaymatrix を使う）。
-  再エンコード（`-c:v libx264`）すれば回転が適用されてメタデータが落ちる
+- **If audio is shorter than the requested range, `-shortest` can produce an mp4 with zero streams and exit code 0.**
+  This occurs when `--start` exceeds the audio duration, for example. Specify the duration with `-t`
+  and extend short audio with silence using `-af apad` (`mux_audio` in `video.py`).
+- **Count the frames written and fail if the count is zero.** ffmpeg exits successfully even if no frame arrives.
+- **Seeking by frame number with the `trim` filter decodes everything from the beginning.**
+  At frame 20,000 this took 1.82 s, versus 0.20 s with `-ss` before `-i` (verified to return identical pixels).
+  Current ffmpeg input-side `-ss` does not round to a keyframe. Aim half a frame early to avoid rounding up.
+  The frame-number-to-time mapping assumes a constant frame rate (`read_frames` in `video.py`).
+- **Quilt frames are huge, so x264's default settings run out of memory.**
+  A 4092² yuv420p frame is 25 MB. x264 retains frames for lookahead and each thread,
+  using a measured 2.66 GB and hitting the container memory limit, where **the kernel kills it**.
+  The only symptom is an ffmpeg failure with **empty stderr** (it cannot write anything after being killed).
+  Check `State.OOMKilled` in `docker inspect`. Longer inputs fail **at the same frame every time**
+  (frame 82 in the observed case), which resembles a code bug.
+  `rc-lookahead=10:sliced-threads=1` reduces memory use to 1.55 GB.
+- **Inputs with rotation metadata need `-noautorotate`; otherwise output width and height swap relative to ffprobe.**
+  The byte count still matches, so `reshape` succeeds and processing continues with a corrupted image.
+- **`ffmpeg -metadata:s:v rotate=0` does not remove rotation metadata** (current ffmpeg uses displaymatrix).
+  Re-encoding (`-c:v libx264`) applies the rotation and removes the metadata.
 
-## テスト（pytest）
+## Tests (pytest)
 
-- テスト対象は純ロジック（quilt のレイアウト計算、視点位置の割り当て、引数の検証）
-- モデル推論そのものはテストしない（重みが必要で、実行時間も現実的でない）。
-  推論を呼ぶ関数は入出力の形状（shape / dtype）だけを検証する
+- Test pure logic: quilt layout calculations, view-position assignment, and argument validation.
+- Do not test model inference itself: it requires weights and takes impractically long.
+  For functions that call inference, validate only input/output shape and dtype.

@@ -5,69 +5,74 @@ paths:
   - "viewer/src/**/*.vue"
 ---
 
-# 外部リファレンス（Looking Glass / 深度推定モデル）
+# External references (Looking Glass / depth estimation models)
 
-**パラメータ名・レイアウト規約・モデルの入出力を推測で書かない。** 必ず下記で現物を確認してから実装する。
-非自明な制約をコードに書くときは出典 URL を添える。
+**Do not guess parameter names, layout conventions, or model inputs and outputs.**
+Check the sources below before implementation. Cite the source URL when encoding non-obvious constraints in code.
 
 ## Looking Glass
 
-| ドキュメント | URL |
+| Documentation | URL |
 | --- | --- |
-| quilt とは（レイアウト・視点数の考え方） | https://lookingglassfactory.com/tutorial/what-is-a-quilt |
-| quilt の主要概念 | https://lfdocs.lookingglassfactory.com/keyconcepts/quilts |
-| quilt 動画のエンコード規約 | https://lfdocs.lookingglassfactory.com/keyconcepts/quilts/quilt-video-encoding |
-| quilt 動画の再生と音声 | https://docs.lookingglassfactory.com/software/index/quilt-video-audio-and-playback |
-| WebXR ライブラリ（`@lookingglass/webxr`） | https://lfdocs.lookingglassfactory.com/software/creator-tools/webxr |
-| Bridge SDK（キャリブレーション取得・表示連携） | https://docs.lookingglassfactory.com/software/looking-glass-bridge-sdk |
-| Bridge.js（Web から Bridge の media player に quilt を cast する公式ライブラリ） | https://github.com/Looking-Glass/bridge.js |
-| コミュニティ製ツール一覧 | https://lfdocs.lookingglassfactory.com/software/third-party-apps-and-tools/community-made-tools-and-projects |
+| What is a quilt? (layout and view-count concepts) | https://lookingglassfactory.com/tutorial/what-is-a-quilt |
+| Quilt key concepts | https://lfdocs.lookingglassfactory.com/keyconcepts/quilts |
+| Quilt video encoding conventions | https://lfdocs.lookingglassfactory.com/keyconcepts/quilts/quilt-video-encoding |
+| Quilt video playback and audio | https://docs.lookingglassfactory.com/software/index/quilt-video-audio-and-playback |
+| WebXR library (`@lookingglass/webxr`) | https://lfdocs.lookingglassfactory.com/software/creator-tools/webxr |
+| Bridge SDK (calibration retrieval and display integration) | https://docs.lookingglassfactory.com/software/looking-glass-bridge-sdk |
+| Bridge.js (official library for casting quilts from the web to Bridge's media player) | https://github.com/Looking-Glass/bridge.js |
+| Community tools | https://lfdocs.lookingglassfactory.com/software/third-party-apps-and-tools/community-made-tools-and-projects |
 
-- **quilt の列数×行数と視点数はディスプレイの機種ごとに異なる**（例: Looking Glass 16" は 5 列 × 9 行）。
-  変換側でハードコードせず、機種の指定を引数で受ける
-- **機種ごとのタイル数はシリアル接頭辞（`LKG-4K` / `LKG-P` など）から引ける。** 対応表は
-  `@lookingglass/webxr@0.6.0` の `dist/bundle/webxr.js` にある `LookingGlassConfig` の
-  `get quiltWidth` / `get quiltHeight`。**ただしこれをコードへ写さない。** 解像度の既定値が
-  実機の値と食い違う（ポリフィル側は Portrait でも 4096² を返す）。実行時に Bridge の
-  `defaultQuilt` が返す値のほうが正確なので、ビューアはそれと突き合わせる（`layoutMismatch`）
-- 高解像度の quilt 動画はブラウザや OS 標準プレーヤーで再生できない場合がある（コーデック制約）。
-  エンコード設定を決めるときは上記「quilt 動画のエンコード規約」を確認する
-- **Bridge.js の公式ドキュメントに動画（mp4）の例は無い。** 静止画（jpg）の `QuiltHologram` を `cast` する例のみ。
-  quilt 動画を Bridge 経由で再生できるかは実機で確かめてから設計に組み込む
+- **Quilt columns × rows and view count depend on the display model** (for example, Looking Glass 16" uses 5 columns × 9 rows).
+  Accept the model as an argument instead of hard-coding it in the converter.
+- **Per-model tile counts can be looked up by serial prefix (`LKG-4K`, `LKG-P`, etc.).**
+  The mapping is in `LookingGlassConfig`'s `get quiltWidth` / `get quiltHeight` in
+  `dist/bundle/webxr.js` from `@lookingglass/webxr@0.6.0`. **Do not copy it into the code.**
+  Its default resolutions differ from the hardware (the polyfill returns 4096² even for Portrait).
+  Bridge's runtime `defaultQuilt` values are more accurate, so the viewer checks against them (`layoutMismatch`).
+- High-resolution quilt videos may not play in browsers or the OS's default player because of codec limits.
+  Check the encoding conventions linked above when choosing encoding settings.
+- **The official Bridge.js documentation has no video (mp4) example.** It only shows casting a still-image (jpg)
+  `QuiltHologram`. **Casting a quilt video was tried on hardware and did not play**, so the viewer no longer
+  casts at all; it shows the quilt in its own window instead (see the design decisions in `CLAUDE.md`).
+  `getDisplays()` for calibration is still used.
 
-### Bridge.js（`@lookingglass/bridge`）の現物確認で分かったこと
+### Findings from inspecting Bridge.js (`@lookingglass/bridge`)
 
-同梱の `dist/*.d.ts` と `dist/looking-glass-bridge.mjs` が唯一の出典。README には型の説明が無い。
+The bundled `dist/*.d.ts` and `dist/looking-glass-bridge.mjs` are the sole sources here.
+The README does not describe the types.
 
-- `getDisplays()` の `calibration` は**素の数値**（`pitch: 52.58` の形）。
-  `@lookingglass/webxr` の `LookingGlassConfig.calibration` は `{ value: 52.58 }` で包む。**別物なので混ぜない**
-- `defaultQuilt` は `{ quiltWidth, quiltHeight }` が**画素数**、`{ columns, rows }` が**タイル数**、
-  `quiltAspect` がタイル 1 枚の縦横比。webxr ポリフィル側の `quiltWidth` はタイル数を指すので名前が衝突している
-- `QuiltHologram` の `uri` は **Bridge（別プロセス）が読める場所**でなければならない。
-  ブラウザ内だけで有効な `blob:` URL は渡せない
-- パッケージの `exports` に `"types"` が無く、`moduleResolution: bundler` では同梱の型定義に届かない。
-  `viewer/tsconfig.app.json` の `paths` で `dist/index.d.ts` を直接指している
-- `exports` の `import` と `require` が**逆**（`import` が CJS、`require` が ESM）。Vite は解決できるが上流のバグ
-- **レンチキュラー変換の式は公式ドキュメントに無い。** 唯一の出典は
-  `@lookingglass/webxr@0.6.0` の `dist/bundle/webxr.js` にある `Shader()` と、
-  `LookingGlassConfig` の `get pitch / tilt / subp`。`viewer/src/lenticular.ts` はこれに合わせている。
-  **このパッケージは viewer の依存に入っていない**ので、突き合わせるときは
-  `npm pack @lookingglass/webxr@0.6.0` で取り出す
-- **タイルは整数サイズの格子に並べ、余った端の画素は UV で除外する。** 公式は
-  `tileWidth = round(framebufferWidth / columns)` で格子を作り、`quiltViewPortion` で余白を外す。
-  小数境界に置くとどのタイルにも入らない列・行ができる（`viewer/src/lenticular.ts` の `viewPortion`、
-  `converter/src/lkg_quilt_converter/quilt.py` の `QuiltSpec.tile_size`）
-- **同梱の `.d.ts` は `Display` の `index` / `windowCoords` を `BridgeValue` と宣言しているが、
-  実装（`tryParseDisplay`）は全フィールドを unwrap して返す。** 型を信じて `.value` を付けると
-  `undefined` になる（型チェックは通る）
-- **HTTP API を直に叩くと `calibration` と `defaultQuilt` は JSON の文字列で返る**（`JSON.parse` が要る）。
-  bridge.js を経由する場合はライブラリ側が parse する。**Looking Glass 以外のモニタも一覧に混ざり、
-  その `calibration` は空文字列**（parse できない）
+- `getDisplays()` returns **plain numbers** in `calibration` (such as `pitch: 52.58`).
+  `@lookingglass/webxr` wraps `LookingGlassConfig.calibration` values as `{ value: 52.58 }`.
+  **These are different representations; do not mix them.**
+- In `defaultQuilt`, `{ quiltWidth, quiltHeight }` are **pixel dimensions**, `{ columns, rows }` are **tile counts**,
+  and `quiltAspect` is the aspect ratio of one tile. The webxr polyfill's `quiltWidth` means tile count,
+  so the names collide.
+- A `QuiltHologram`'s `uri` must point to **a location readable by Bridge, which is a separate process**.
+  A `blob:` URL valid only inside the browser cannot be used.
+- The package's `exports` has no `"types"` entry, so `moduleResolution: bundler` cannot reach the bundled declarations.
+  `paths` in `viewer/tsconfig.app.json` points directly to `dist/index.d.ts`.
+- The `import` and `require` entries in `exports` are **reversed** (`import` points to CJS, `require` to ESM).
+  Vite resolves them, but this is an upstream bug.
+- **The lenticular conversion formula is absent from the official documentation.** The sole sources are `Shader()`
+  and `LookingGlassConfig`'s `get pitch / tilt / subp` in `dist/bundle/webxr.js` from `@lookingglass/webxr@0.6.0`.
+  `viewer/src/lenticular.ts` follows them. **This package is not a viewer dependency**;
+  retrieve it with `npm pack @lookingglass/webxr@0.6.0` when comparing implementations.
+- **Arrange tiles on an integer-sized grid and exclude leftover edge pixels through UVs.**
+  The official implementation builds the grid with `tileWidth = round(framebufferWidth / columns)`
+  and excludes padding using `quiltViewPortion`. Fractional boundaries leave columns or rows outside every tile
+  (`viewPortion` in `viewer/src/lenticular.ts`, `QuiltSpec.tile_size` in `converter/src/lkg_quilt_converter/quilt.py`).
+- **The bundled `.d.ts` declares `Display.index` / `windowCoords` as `BridgeValue`, but the implementation
+  (`tryParseDisplay`) unwraps every field before returning it.** Trusting the declarations and adding `.value`
+  yields `undefined`, even though type checking passes.
+- **Direct HTTP API calls return `calibration` and `defaultQuilt` as JSON strings**, requiring `JSON.parse`.
+  When using bridge.js, the library parses them. **The list also includes non-Looking Glass monitors,
+  whose `calibration` is an empty string** and cannot be parsed.
 
-### 機種の quilt を実機から聞く（ブラウザ不要）
+### Querying a device's quilt settings directly (no browser needed)
 
-Bridge のローカル API は `http://localhost:33334/<エンドポイント>` への **PUT**。
-機種のプリセットを起こすときはここを正本にする。
+Bridge's local API uses **PUT** requests to `http://localhost:33334/<endpoint>`.
+Use it as the source of truth when defining model presets.
 
 ```bash
 TOKEN=$(curl -s -X PUT -H 'Content-Type: application/json' -d '{"name":"probe"}' \
@@ -78,37 +83,38 @@ curl -s -X PUT -H 'Content-Type: application/json' -d "{\"orchestration\":\"$TOK
   http://localhost:33334/exit_orchestration
 ```
 
-- 返る `defaultQuilt` が `tileX` / `tileY`（タイル数）と `quiltX` / `quiltY`（画素数）と
-  `quiltAspect`（タイル 1 枚の表示上の縦横比）を持つ
-- **タイルの画素の縦横比と `quiltAspect` は一致しない。** Go は 4092/11 x 4092/6 = 372x682 画素で
-  比は 0.545 だが、表示上は 0.5625。余白の計算は表示上の比で行う
-- 実測値（Looking Glass Go, serial `LKG-E`, `hardwareVersion: go_p`）:
-  `tileX 11 / tileY 6 / quiltX 4092 / quiltY 4092 / quiltAspect 0.5625`、画面 1440x2560、視野角 54°
-- `@lookingglass/webxr@0.6.0` の `LookingGlassConfig` にもシリアル接頭辞ごとの表があり
-  タイル数は一致するが、**解像度は実機と食い違う**ことがあるので写さない
+- Returned `defaultQuilt` contains `tileX` / `tileY` (tile counts), `quiltX` / `quiltY` (pixel dimensions),
+  and `quiltAspect` (the displayed aspect ratio of one tile).
+- **The tile's pixel aspect ratio differs from `quiltAspect`.** Go uses 4092/11 x 4092/6 = 372x682 pixels,
+  a ratio of 0.545, but the displayed ratio is 0.5625. Calculate padding using the displayed ratio.
+- Measured values (Looking Glass Go, serial prefix `LKG-E`, `hardwareVersion: go_p`):
+  `tileX 11 / tileY 6 / quiltX 4092 / quiltY 4092 / quiltAspect 0.5625`, screen 1440x2560, view cone 54°.
+- `LookingGlassConfig` in `@lookingglass/webxr@0.6.0` also has a table indexed by serial prefix.
+  Tile counts agree, but **resolutions can differ from the hardware**, so do not copy them.
 
-## 参考になる既存実装
+## Existing implementations to consult
 
-| 実装 | 何の参考になるか |
+| Implementation | Useful reference for |
 | --- | --- |
-| https://github.com/9ballsyndrome/WebGL_LookingGlass_QuiltViewer | ブラウザで quilt を表示する最小構成 |
-| https://github.com/amariichi/VideoDepthViewer3D | 深度推定 + three.js/WebXR + Looking Glass 出力の全体構成（入力は単眼） |
-| https://github.com/JuanIrache/looking-glass-after-effects | 横移動ショットから quilt を組む考え方 |
-| https://github.com/peterwilli/Liquilt | quilt を Web 配信しやすくする形式変換 |
+| https://github.com/9ballsyndrome/WebGL_LookingGlass_QuiltViewer | Minimal browser quilt display |
+| https://github.com/amariichi/VideoDepthViewer3D | Overall depth estimation + three.js/WebXR + Looking Glass output architecture (monocular input) |
+| https://github.com/JuanIrache/looking-glass-after-effects | Building quilts from lateral camera movement |
+| https://github.com/peterwilli/Liquilt | Format conversion for easier quilt distribution on the web |
 
-## 深度（視差）推定モデルの候補
+## Candidate depth (disparity) estimation models
 
-入力がステレオ 2 視点なので、**単眼深度推定ではなくステレオマッチング**を第一候補にする
-（視差から直接求まり、スケールの曖昧さがない）。
+The input provides two stereo views, so prefer **stereo matching over monocular depth estimation**.
+Depth can be derived directly from disparity without scale ambiguity.
 
-| モデル | 位置づけ | URL |
+| Model | Role | URL |
 | --- | --- | --- |
-| Stereo Any Video | 動画向け。フレーム間の時間的一貫性を扱う | https://arxiv.org/html/2503.05549v1 |
-| FoundationStereo | ゼロショット精度重視。1 枚あたりは重い | https://arxiv.org/pdf/2501.09898 |
-| Fast-FoundationStereo | 上記を約 10 倍高速化（CVPR 2026） | https://github.com/NVlabs/Fast-FoundationStereo |
+| Stereo Any Video | Video-oriented; addresses temporal consistency across frames | https://arxiv.org/html/2503.05549v1 |
+| FoundationStereo | Prioritizes zero-shot accuracy; expensive per frame | https://arxiv.org/pdf/2501.09898 |
+| Fast-FoundationStereo | About 10× faster than the above (CVPR 2026) | https://github.com/NVlabs/Fast-FoundationStereo |
 
-- **動画では単フレーム精度より時間的一貫性が効く。** 深度がフレーム間でブレると、
-  再生時にちらつきとして見える
-- **無地の面はどのステレオマッチングでも視差が決まらない**（同じ色がどこにでも合う）。
-  既定の SGBM では背景の視差に潰れる。深層モデルに替えるときの主な動機はここ
-- PyTorch は Python 3.10〜3.14 に対応する（https://pytorch.org/get-started/locally/ で確認）
+- **For video, temporal consistency matters more than single-frame accuracy.**
+  Depth fluctuations between frames appear as flicker during playback.
+- **No stereo matcher can determine disparity on a textureless surface**: the same color matches everywhere.
+  With the default SGBM, such surfaces collapse to the background disparity.
+  This is the main motivation for replacing it with a deep model.
+- PyTorch supports Python 3.10–3.14 (checked at https://pytorch.org/get-started/locally/).

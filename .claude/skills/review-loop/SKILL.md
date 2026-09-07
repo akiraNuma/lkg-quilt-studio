@@ -1,38 +1,39 @@
 ---
 name: review-loop
-description: "lkg-quilt-studio の変更を code-reviewer サブエージェントでレビューし、MUST/SHOULD が 0 件になるまで「レビュー→修正→再レビュー」を反復する推論的センサー。コミット前に使う。Use for: review-loop, レビュー, コードレビュー"
+description: "Review lkg-quilt-studio changes with a code-reviewer subagent and repeat review, fixes, and re-review until MUST and SHOULD findings are zero. Use before committing."
 ---
 
-# review-loop — LLM-as-judge レビュー反復
+# review-loop — iterative LLM review
 
-## 前提（計算的センサーが先）
+## Prerequisites: mechanical checks first
 
-開始前に変更した側の機械チェックが緑であること。落ちていれば先に直す。
-文書・ハーネスだけの変更は、参照先・リンク・設定構文を確認する。
-その場合、アプリの機械チェックを通過済みとは報告しない。
+Pass the mechanical checks for the changed layer before starting. Fix failures first.
+For documentation or harness-only changes, verify references, links, and configuration syntax.
+In that case, do not report application checks as having passed.
 
 ```bash
-cd converter && uv run poe check   # converter を変更した場合
-cd viewer && npm run check         # viewer を変更した場合
+(cd converter && uv run poe check)   # If converter changed
+(cd viewer && npm run check)         # If viewer changed
 ```
 
-## ループ
+## Loop
 
-1. `code-reviewer` サブエージェントにレビューを依頼する（観点の正本は**このリポジトリの**
-   `.claude/agents/code-reviewer.md`。ここに観点を複製しない）
-   Codex は `.codex/agents/code_reviewer.toml` の担当を使う。
-   名前付き担当を選べない場合は、通常のサブエージェントに正本を読ませる。
-   依頼には対象ファイル・実施した検証・未検証の範囲を含める。
-2. 指摘を MUST / SHOULD / NICE で受け取る
-3. **MUST と SHOULD が 0 件なら終了。** NICE は依頼範囲内なら対応する。
-   見送った項目は理由を報告し、製品仕様などユーザーが決める事項だけ判断を仰ぐ
-4. 残っていれば修正する。指摘に納得できない場合は反論せず事実（コード・公式リファレンス）で
-   確認し、誤検知ならその根拠を添えて NICE 扱いに落とす
-5. 修正後、前提の機械チェックを再実行して緑を確認する
-6. 1 に戻る
+1. Ask a `code-reviewer` subagent to review. The authoritative criteria are in
+   **this repository's** `.claude/agents/code-reviewer.md`; do not duplicate them here.
+   Codex uses `.codex/agents/code_reviewer.toml`.
+   If named agents are unavailable, have a regular subagent read the authoritative criteria.
+   Include the affected files, completed validation, and unverified scope in the request.
+2. Receive findings classified as MUST / SHOULD / NICE.
+3. **Stop when MUST and SHOULD are both zero.** Address NICE items within the requested scope.
+   Explain deferred items; ask the user only about decisions they own, such as product behavior.
+4. Fix remaining findings. Resolve disagreements using facts (code or official references).
+   If a finding is a false positive, provide evidence and downgrade it to NICE.
+5. Rerun the applicable prerequisite checks after fixes and confirm they pass.
+6. Return to step 1.
 
-## 注意
+## Guardrails
 
-- 同じ指摘が 2 回続くか 5 ラウンドを超えたら、修正がズレている。立ち止まってユーザーに相談する
-- 修正でスコープを広げない（指摘への対応以外のリファクタを混ぜない）
-- Looking Glass の仕様・モデルの入出力に関わる指摘は、公式リファレンスを確認してから直す
+- If the same finding recurs twice or the loop exceeds five rounds, stop and consult the user;
+  the fixes are not addressing the problem.
+- Do not expand scope with unrelated refactoring while addressing findings.
+- Check official references before fixing findings involving Looking Glass specifications or model I/O.

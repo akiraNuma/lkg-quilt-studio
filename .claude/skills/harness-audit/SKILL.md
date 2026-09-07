@@ -1,50 +1,53 @@
 ---
 name: harness-audit
-description: "ハーネス（AGENTS.md / CLAUDE.md / .claude / .agents / .codex / README）の記述が実コードと一致しているか監査し、乖離を修正する。機能追加のまとまり・ドキュメントの乖離確認に使う。Use for: harness-audit, ハーネス監査, ドキュメント監査, 乖離チェック"
+description: "Audit project harness documentation (AGENTS.md, CLAUDE.md, .claude, .agents, .codex, README) against implementation and fix drift. Use after a substantial feature or when checking documentation consistency."
 ---
 
-# harness-audit — ハーネスと実態の乖離監査
+# harness-audit — audit the harness against implementation
 
-前提: 陳腐化したドキュメントは誤情報より害が大きい。「合ってるはず」で済ませず実物と突き合わせる。
-特定の入口・設定だけの変更では、その変更と参照先を対象にする。
-全体監査を依頼されたときは、以下の定点チェックをすべて行う。
+Stale instructions can mislead subsequent work. Compare claims with the actual artifacts.
+For a change limited to particular entry points or settings, audit those changes and their references.
+For a requested full audit, perform all recurring checks below.
 
-## 手順
+## Procedure
 
-### 1. 主張の抽出
+### 1. Extract claims
 
-以下から「検証可能な主張」（コマンド、ファイルパス、関数名、手順、設定値）を洗い出す:
+Find verifiable claims (commands, file paths, function names, procedures, and configuration values) in:
 
-- `AGENTS.md` / `CLAUDE.md` / `README.md`
-- `.claude/rules/*.md` / `.claude/agents/*.md` / `.claude/skills/*/SKILL.md`
-- `.agents/skills/` のリンク先 / `.codex/agents/*.toml`
+- `AGENTS.md`, `CLAUDE.md`, and `README.md`.
+- `.claude/rules/*.md`, `.claude/agents/*.md`, and `.claude/skills/*/SKILL.md`.
+- `.agents/skills/` link targets and `.codex/agents/*.toml`.
 
-### 2. 実物との突合
+### 2. Compare with implementation
 
-- 書かれたコマンドが実際に動くか（副作用のない `check` 系は実行して確かめる）
-- 参照先のファイル・関数・CLI 引数が実在するか grep で確認する
-- `.claude/rules/*.md` の `paths:` が現在のディレクトリ構成と一致しているか
-- Codex の入口が対象ルールへ案内し、スキルの相対リンクが解決できるか
-- Codex のエージェント設定が正本のレビュー観点を参照しているか
+- Verify that documented commands work; run checks without side effects.
+- Search for referenced files, functions, and CLI arguments.
+- Check that rule `paths:` match the current directory structure.
+- Check that the Codex entry point routes to the relevant rules and relative skill links resolve.
+- Check that Codex agent settings refer to the authoritative review criteria.
+- Check `README.ja.md` against `README.md` for meaning, plus `scripts/check-translations.py` results.
+  No other document has a translation; report one as drift if it appears.
 
-### 3. 分類と修正
+### 3. Classify and fix
 
-| 分類 | 対応 |
+| Category | Action |
 | --- | --- |
-| 記述が古い（実態が正） | ドキュメントを現在形に書き直す |
-| コードが規約違反（記述が正） | 修正するか、判断が要るならユーザーに報告 |
-| どちらが正か不明 | 勝手に直さずユーザーに確認 |
-| 重複した記述 | `.claude/rules/documentation.md` の置き場所表に一本化して他方を削除 |
+| Stale documentation; implementation is correct | Rewrite the documentation to describe the current state |
+| Code violates a correct rule | Fix it, or report a decision that requires the user |
+| Unclear which is correct | Ask the user rather than guessing |
+| Duplicated authority | Consolidate using the ownership table in `.claude/rules/documentation.md` |
 
-### 4. 定点チェック
+### 4. Recurring checks
 
-全体監査で必ず確認する項目:
+Always include these in a full audit:
 
-- `CLAUDE.md`「検証フロー」のコマンドがそのまま動くか
-- `code-reviewer` の観点が現在のコード構成と合っているか
-- `external-apis.md` の URL が生きていて、書かれた制限が今も制限のままか
-- quilt のレイアウトに関する記述が、対応している機種の実際の値と合っているか
+- Run the commands in the validation workflow in `CLAUDE.md` as written.
+- Check that `code-reviewer` criteria fit the current code structure.
+- Check that `external-apis.md` URLs work and stated limitations still apply.
+- Compare quilt layout claims with actual values for supported devices.
 
-### 5. 報告
+### 5. Report
 
-修正した項目 / 残した乖離（判断待ち）/ 変更なしを確認できた項目を簡潔に報告する。
+Briefly report corrected items, remaining discrepancies awaiting decisions,
+and items verified to need no change.

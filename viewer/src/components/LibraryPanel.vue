@@ -55,11 +55,7 @@ function total(items: { sizeBytes: number }[]): string {
 
 function onPlay(job: ConvertJob): void {
   if (job.resultUrl === null) return
-  // Bridge は別プロセスなので、相対パスでは取りに行けない
-  emit(
-    'play',
-    new URL(job.resultUrl, window.location.href).toString()
-  )
+  emit('play', job.resultUrl)
 }
 
 function confirmRemove(id: string): void {

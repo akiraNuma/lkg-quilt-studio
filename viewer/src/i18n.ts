@@ -24,8 +24,6 @@ const ja = {
   'display.disconnect': '切断',
   'display.hint':
     '接続すると機種が自動で入る。実機に出すには接続が要る',
-  'display.cast': 'Bridge の窓へ cast',
-  'display.castHint': 'cast は URL かファイルパスの quilt だけ',
 
   'source.title': '素材',
   'source.pick': '動画を選ぶ',
@@ -104,7 +102,7 @@ const ja = {
   'stage.unmute': 'ミュート解除',
   'stage.seek': '再生位置',
   'stage.moved':
-    '別窓へ移した。その窓を Looking Glass 側へ動かして全画面にする',
+    '別窓へ移した。その窓を Looking Glass 側へ動かして、窓の中をダブルクリックで全画面にする',
   'stage.popupBlocked':
     '別窓を開けなかった。ポップアップの許可を確認する',
   'stage.sizeNote':
@@ -142,10 +140,6 @@ const ja = {
     'Bridge に接続できない。Looking Glass Bridge を起動して再試行する',
   'bridge.loadFailed': 'Bridge の読み込みに失敗した: {error}',
   'bridge.notFound': 'Looking Glass が見つからない',
-  'bridge.needConnect': '先に Bridge へ接続する',
-  'bridge.castOk': '{uri} を Bridge に渡した',
-  'bridge.castFailed':
-    'cast が失敗した。Bridge が {uri} を読める場所か確認する',
   'bridge.unknownSerial': '(不明)',
 
   'api.unreachable':
@@ -173,8 +167,6 @@ const en: Record<MessageKey, string> = {
   'display.disconnect': 'Disconnect',
   'display.hint':
     'Connecting fills in the model. It is only needed to show on the device.',
-  'display.cast': 'Cast to the Bridge window',
-  'display.castHint': 'Cast needs a quilt at a URL or a file path',
 
   'source.title': 'Source',
   'source.pick': 'Choose a video',
@@ -253,7 +245,7 @@ const en: Record<MessageKey, string> = {
   'stage.unmute': 'Unmute',
   'stage.seek': 'Playback position',
   'stage.moved':
-    'Moved to a separate window. Drag that window onto the Looking Glass and make it full screen.',
+    'Moved to a separate window. Drag it onto the Looking Glass, then double-click inside it for full screen.',
   'stage.popupBlocked':
     'Could not open the window. Check the popup permission.',
   'stage.sizeNote':
@@ -292,10 +284,6 @@ const en: Record<MessageKey, string> = {
     'Cannot reach Bridge. Start Looking Glass Bridge and try again.',
   'bridge.loadFailed': 'Failed to load Bridge: {error}',
   'bridge.notFound': 'No Looking Glass found',
-  'bridge.needConnect': 'Connect to Bridge first',
-  'bridge.castOk': 'Handed {uri} to Bridge',
-  'bridge.castFailed':
-    'Cast failed. Check that Bridge can read {uri}.',
   'bridge.unknownSerial': '(unknown)',
 
   'api.unreachable':

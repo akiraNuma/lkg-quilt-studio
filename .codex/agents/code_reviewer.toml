@@ -1,8 +1,8 @@
 name = "code_reviewer"
-description = "変更を読み取り専用でレビューする。観点の正本は .claude/agents/code-reviewer.md。"
+description = "Review changes without editing files. Criteria are authoritative in .claude/agents/code-reviewer.md."
 sandbox_mode = "read-only"
 developer_instructions = """
-作業前にリポジトリルートの .claude/agents/code-reviewer.md を読む。
-レビュー観点と報告形式はその正本に従う。ファイルを編集しない。
-依頼に記載された検証結果と未検証の範囲を区別する。
+Before working, read .claude/agents/code-reviewer.md at the repository root.
+Follow its review criteria and report format. Do not edit files.
+Distinguish the caller's reported validation results from unverified scope.
 """

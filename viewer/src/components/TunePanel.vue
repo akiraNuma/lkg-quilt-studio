@@ -67,11 +67,15 @@ const baked = computed(() => {
 
     <p class="caption">{{ t('tune.redraw') }}</p>
 
+    <!--
+      上限は穴埋めの粗さで決まるので、計算では決められない。実機で詰められるよう
+      外挿 2.5 倍ぶんまで開けてある（1.0 で左右カメラの間、それ以上は外挿）
+    -->
     <ValueSlider
       v-model="span"
       :label="t('tune.span')"
       :min="0.4"
-      :max="3"
+      :max="6"
       :step="0.1"
       :decimals="2"
       :disabled="disabled"

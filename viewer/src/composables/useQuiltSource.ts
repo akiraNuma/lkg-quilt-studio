@@ -11,11 +11,6 @@ export type QuiltSource = {
   /** プレビュー 1 枚なら何フレーム目か。動画なら null */
   frameIndex: number | null
   layout: QuiltLayout
-  /**
-   * Bridge に cast できる場所にあるか。Bridge は別プロセスなので、
-   * ブラウザ内だけで有効な blob: URL は取りに行けない
-   */
-  castUri: string | null
 }
 
 /** quilt 動画の選択と、それに紐づく object URL の後片付けを持つ。 */
@@ -51,7 +46,6 @@ export function useQuiltSource() {
       url: objectUrl,
       frameIndex: null,
       layout,
-      castUri: null,
     }
   }
 
@@ -70,7 +64,6 @@ export function useQuiltSource() {
       url: trimmed,
       frameIndex: null,
       layout,
-      castUri: trimmed,
     }
   }
 
@@ -93,7 +86,6 @@ export function useQuiltSource() {
       url: objectUrl,
       frameIndex,
       layout,
-      castUri: null,
     }
   }
 
