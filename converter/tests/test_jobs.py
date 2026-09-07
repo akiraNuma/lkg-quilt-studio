@@ -1,14 +1,17 @@
 """ジョブの受け付けと状態遷移。変換そのものは pipeline 側のテストで見る。"""
 
 import json
+import threading
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
 
 import pytest
 
 from lkg_quilt_converter.jobs import ConvertRequest, Job, JobStore
+from lkg_quilt_converter.pipeline import ConvertOptions
 from lkg_quilt_converter.sources import Source, SourceStore
 
 SAMPLE = Path(__file__).resolve().parents[2] / "samples" / "bbb_stereo_tb.mp4"
@@ -170,6 +173,42 @@ def test_delete_removes_the_directory(tmp_path: Path) -> None:
     assert store.delete(job.id)
     assert not (tmp_path / "jobs" / job.id).exists()
     assert store.get(job.id) is None
+    store.close()
+
+
+def test_uses_source_only_while_the_job_is_unfinished(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """変換中の素材を消すと途中で失敗する。消す前にこれで確かめる。
+
+    変換そのものは差し替える。実物を走らせると「走っている最中」を捉える窓が短く、
+    真になる側を確かめられない。
+    """
+    running = threading.Event()
+    finish = threading.Event()
+
+    def fake_convert(
+        options: ConvertOptions,
+        *,
+        progress: Callable[[int, int], None] | None = None,
+    ) -> None:
+        running.set()
+        finish.wait(timeout=10.0)
+
+    monkeypatch.setattr("lkg_quilt_converter.jobs.convert", fake_convert)
+    # 入力を先に置く。JobStore が持つ SourceStore は起動時に読むので、
+    # あとから足した入力は「見つからない」で失敗する（変換まで届かない）
+    source = _broken_source(tmp_path)
+    store = _store(tmp_path)
+    job = store.submit(source, ConvertRequest(frames=1))
+
+    assert running.wait(timeout=10.0)
+    assert store.uses_source(source.id)
+    assert not store.uses_source("nope")
+
+    finish.set()
+    _wait_until_settled(store, job.id)
+    assert not store.uses_source(source.id)
     store.close()
 
 

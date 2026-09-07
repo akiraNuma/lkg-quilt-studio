@@ -1,0 +1,8 @@
+# 運用の正本は CLAUDE.md。AGENTS.md が優先される場合はそこから読む。
+project_doc_fallback_filenames = ["CLAUDE.md"]
+
+approval_policy = "never"
+sandbox_mode = "danger-full-access"
+
+[features]
+hooks = true

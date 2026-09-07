@@ -1,4 +1,5 @@
 import { onUnmounted, ref } from 'vue'
+import { t } from '../i18n'
 import type { Calibration } from '../lenticular'
 import {
   viewCount,
@@ -55,15 +56,16 @@ export function useBridge() {
       const connected = await instance.connect()
       if (!connected.success) {
         status.value = 'unavailable'
-        message.value =
-          'Bridge に接続できない。Looking Glass Bridge を起動して再試行する'
+        message.value = t('bridge.unavailable')
         return
       }
       status.value = 'connected'
       await refresh()
     } catch (failure) {
       status.value = 'unavailable'
-      message.value = `Bridge の読み込みに失敗した: ${describe(failure)}`
+      message.value = t('bridge.loadFailed', {
+        error: describe(failure),
+      })
     }
   }
 
@@ -72,20 +74,21 @@ export function useBridge() {
     const found = await client.getDisplays()
     if (!found.success || found.response === null) {
       displays.value = []
-      message.value = 'Looking Glass が見つからない'
+      message.value = t('bridge.notFound')
       return
     }
     displays.value = found.response.map((display, order) => ({
       // 同梱の .d.ts は index / windowCoords を BridgeValue と宣言しているが、
       // 実装（tryParseDisplay）は全フィールドを unwrap して返す。上流の型バグ
       index: asNumber(display.index) ?? order,
-      serial: display.calibration?.serial ?? '(不明)',
+      serial:
+        display.calibration?.serial ?? t('bridge.unknownSerial'),
       calibration: display.calibration,
       quilt: display.defaultQuilt,
       windowCoords: asPoint(display.windowCoords),
     }))
     if (displays.value.length === 0) {
-      message.value = 'Looking Glass が見つからない'
+      message.value = t('bridge.notFound')
     }
   }
 
@@ -95,7 +98,7 @@ export function useBridge() {
     layout: QuiltLayout
   ): Promise<boolean> {
     if (client === null || bridge === null) {
-      message.value = '先に Bridge へ接続する'
+      message.value = t('bridge.needConnect')
       return false
     }
     const hologram = new bridge.QuiltHologram({
@@ -109,8 +112,8 @@ export function useBridge() {
     })
     const result = await client.cast(hologram)
     message.value = result.success
-      ? `${uri} を Bridge に渡した`
-      : `cast が失敗した。Bridge が ${uri} を読める場所か確認する`
+      ? t('bridge.castOk', { uri })
+      : t('bridge.castFailed', { uri })
     return result.success
   }
 

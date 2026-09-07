@@ -1,0 +1,185 @@
+/* 色とフォームの見た目はここだけに置く。各コンポーネントは var() を使う */
+
+:root {
+  color-scheme: dark;
+
+  --bg: #0e1116;
+  --surface: #161b22;
+  --field: #1e242d;
+  --line: #2b333e;
+  --line-strong: #3d4756;
+  --text: #e6eaf0;
+  --muted: #9aa6b6;
+  --surface-inset: #11161d;
+  --accent-soft: #1c3047;
+  --overlay: rgb(14 17 22 / 85%);
+  --accent: #4da3ff;
+  --accent-ink: #06121f;
+  --warn: #ffb454;
+  --danger: #ff7b72;
+  --ok: #57d38c;
+
+  --radius: 12px;
+  --gap: 0.75rem;
+
+  font-family:
+    system-ui,
+    -apple-system,
+    'Hiragino Kaku Gothic ProN',
+    'Noto Sans JP',
+    sans-serif;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--text);
+  background: var(--bg);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+}
+
+h1,
+h2,
+h3 {
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+a {
+  color: var(--accent);
+}
+
+/* フォーカスはどの部品でも同じ見え方にする。キーボードで辿れないと調整できない */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+button,
+select,
+input[type='text'] {
+  font: inherit;
+  font-size: 0.875rem;
+  min-height: 2.25rem;
+  color: var(--text);
+  background: var(--field);
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  padding: 0.4rem 0.7rem;
+}
+
+button {
+  cursor: pointer;
+  font-weight: 500;
+}
+
+button:hover:not(:disabled),
+select:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+button:disabled,
+select:disabled,
+input:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* 各段の主役の操作。押す場所が 1 つに見えるようにする */
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+input[type='range'],
+input[type='checkbox'],
+progress {
+  accent-color: var(--accent);
+}
+
+input[type='range'] {
+  height: 1.25rem;
+}
+
+label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+progress {
+  height: 0.5rem;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+/* 以下は画面共通の並べ方。scoped で同じものを書き直さない */
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin: 0;
+}
+
+.note {
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin: 0;
+}
+
+.warn {
+  color: var(--warn);
+  font-size: 0.8rem;
+  margin: 0;
+}
+
+.error {
+  color: var(--danger);
+  font-size: 0.8rem;
+  margin: 0;
+}
+
+/* 手順のパネル。番号を振って上から順に進む形にする */
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 1rem 1.1rem 1.1rem;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.panel > h2 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1rem;
+  margin: 0 0 0.15rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.panel > h2 .step {
+  display: grid;
+  place-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}

@@ -1,11 +1,13 @@
 ---
 name: harness-audit
-description: ハーネス（CLAUDE.md / .claude / README）の記述が実コードと一致しているか監査し、乖離を修正する。機能追加のまとまり・「ドキュメントが怪しい」と感じたときに使う。Use for: harness-audit, ハーネス監査, ドキュメント監査, 乖離チェック
+description: "ハーネス（AGENTS.md / CLAUDE.md / .claude / .agents / .codex / README）の記述が実コードと一致しているか監査し、乖離を修正する。機能追加のまとまり・ドキュメントの乖離確認に使う。Use for: harness-audit, ハーネス監査, ドキュメント監査, 乖離チェック"
 ---
 
 # harness-audit — ハーネスと実態の乖離監査
 
 前提: 陳腐化したドキュメントは誤情報より害が大きい。「合ってるはず」で済ませず実物と突き合わせる。
+特定の入口・設定だけの変更では、その変更と参照先を対象にする。
+全体監査を依頼されたときは、以下の定点チェックをすべて行う。
 
 ## 手順
 
@@ -13,14 +15,17 @@ description: ハーネス（CLAUDE.md / .claude / README）の記述が実コー
 
 以下から「検証可能な主張」（コマンド、ファイルパス、関数名、手順、設定値）を洗い出す:
 
-- `CLAUDE.md` / `README.md`
+- `AGENTS.md` / `CLAUDE.md` / `README.md`
 - `.claude/rules/*.md` / `.claude/agents/*.md` / `.claude/skills/*/SKILL.md`
+- `.agents/skills/` のリンク先 / `.codex/agents/*.toml`
 
 ### 2. 実物との突合
 
 - 書かれたコマンドが実際に動くか（副作用のない `check` 系は実行して確かめる）
 - 参照先のファイル・関数・CLI 引数が実在するか grep で確認する
 - `.claude/rules/*.md` の `paths:` が現在のディレクトリ構成と一致しているか
+- Codex の入口が対象ルールへ案内し、スキルの相対リンクが解決できるか
+- Codex のエージェント設定が正本のレビュー観点を参照しているか
 
 ### 3. 分類と修正
 
@@ -33,7 +38,7 @@ description: ハーネス（CLAUDE.md / .claude / README）の記述が実コー
 
 ### 4. 定点チェック
 
-毎回必ず確認する項目:
+全体監査で必ず確認する項目:
 
 - `CLAUDE.md`「検証フロー」のコマンドがそのまま動くか
 - `code-reviewer` の観点が現在のコード構成と合っているか

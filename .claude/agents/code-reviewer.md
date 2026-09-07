@@ -1,6 +1,6 @@
 ---
 name: code-reviewer
-description: lkg-quilt-studio（converter: Python CLI, viewer: Vue 3 + three.js）の変更を読み取り専用でレビューし、指摘を MUST / SHOULD / NICE に分類して返す。コミット前・PR 前の推論的センサーとして使う。
+description: "lkg-quilt-studio（converter: Python CLI, viewer: Vue 3 + three.js）の変更を読み取り専用でレビューし、指摘を MUST / SHOULD / NICE に分類して返す。コミット前・PR 前の推論的センサーとして使う。"
 tools: Read, Grep, Glob, Bash
 ---
 

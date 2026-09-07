@@ -7,6 +7,7 @@
 import json
 import shutil
 import threading
+import time
 import uuid
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -32,6 +33,9 @@ class Source:
 
     frame_count: int
     has_audio: bool
+    created_at: float = 0.0
+    """取り込んだ時刻。一覧を新しい順に並べるのに使う（古い状態ファイルには無いので既定 0）。"""
+
     suggested_layout: StereoLayout | None = None
     """左右の入り方の推定。当たらないこともあるので、画面では初期値として使うだけ。"""
 
@@ -78,6 +82,7 @@ class SourceStore:
             fps=float(info.fps),
             frame_count=info.frame_count,
             has_audio=info.has_audio,
+            created_at=time.time(),
             suggested_layout=layout,
             suggested_projection=projection,
         )
@@ -97,8 +102,20 @@ class SourceStore:
         return None
 
     def all(self) -> list[Source]:
+        """新しい順に返す。画面の一覧はこの順で出す。"""
         with self._lock:
-            return list(self._sources.values())
+            found = list(self._sources.values())
+        return sorted(found, key=lambda source: source.created_at, reverse=True)
+
+    def size(self, source_id: str) -> int:
+        """取り込んだ動画の大きさ（バイト）。数百 MB 残るので画面に出す。"""
+        path = self.path(source_id)
+        if path is None:
+            return 0
+        try:
+            return path.stat().st_size
+        except OSError:
+            return 0
 
     def delete(self, source_id: str) -> bool:
         with self._lock:

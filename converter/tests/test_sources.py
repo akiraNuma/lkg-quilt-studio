@@ -81,6 +81,41 @@ def test_delete_removes_the_directory(tmp_path: Path) -> None:
     assert not store.delete("abc")
 
 
+def test_all_returns_the_newest_first(tmp_path: Path) -> None:
+    for index, stamp in enumerate([10.0, 30.0, 20.0]):
+        _write_state(tmp_path, f"id{index}", created_at=stamp)
+
+    assert [source.id for source in SourceStore(tmp_path).all()] == ["id1", "id2", "id0"]
+
+
+def test_size_reads_the_stored_video(tmp_path: Path) -> None:
+    _write_state(tmp_path, "abc", created_at=0.0, body=b"12345")
+    store = SourceStore(tmp_path)
+
+    assert store.size("abc") == 5
+    assert store.size("nope") == 0
+
+
+def _write_state(root: Path, source_id: str, *, created_at: float, body: bytes = b"x") -> None:
+    directory = root / source_id
+    directory.mkdir()
+    (directory / "input.mp4").write_bytes(body)
+    (directory / "source.json").write_text(
+        json.dumps(
+            {
+                "id": source_id,
+                "name": "movie.mp4",
+                "width": 4,
+                "height": 4,
+                "fps": 1.0,
+                "frame_count": 1,
+                "has_audio": False,
+                "created_at": created_at,
+            }
+        )
+    )
+
+
 @pytest.mark.skipif(not SAMPLE.exists(), reason="サンプル動画が無い")
 def test_real_video_is_probed_on_upload(tmp_path: Path) -> None:
     store = SourceStore(tmp_path)

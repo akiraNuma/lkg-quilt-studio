@@ -2,6 +2,7 @@
 paths:
   - "viewer/**/*.ts"
   - "viewer/**/*.vue"
+  - "viewer/**/*.css"
 ---
 
 # 再生 Web アプリ（Vue 3 + Vite）コーディング規約
@@ -9,9 +10,13 @@ paths:
 検証はホストで実行する:
 
 ```bash
-cd viewer && npm run check   # format:check → typecheck → lint → test
+cd viewer && npm run check   # format:check → typecheck → lint → build → test
 cd viewer && npm run format  # 整形の崩れを直す
 ```
+
+**`build` を `check` に入れてあるのは、`<style>` の構文エラーを他の誰も見ないから**
+（実測: 壊れた CSS は format:check も lint も素通りし、`vite build` だけが落ちる）。
+テンプレート式の構文エラーと閉じタグの不一致は lint が捕まえる（`vue/no-parsing-error`）。
 
 ## 既存パターンに従う
 
@@ -27,7 +32,63 @@ cd viewer && npm run format  # 整形の崩れを直す
 **`npm run typecheck` は `vue-tsc -b --force`。** `tsconfig.json` は `files: []` の solution 形式なので、
 `vue-tsc --noEmit` だと 1 ファイルも検査しない（緑になっても意味が無い）。
 
+## 状態の持ち主とレイヤ
+
+- **状態は composable が持ち、`App.vue` は結線とレイアウトだけ**を持つ。
+  素材・変換の設定・プレビューの自動描画は `composables/usePreview.ts`、
+  ジョブの進捗は `useConvertJob.ts`、再生する quilt は `useQuiltSource.ts`
+- **HTTP は `src/api.ts` に集める**（Vue 非依存・失敗は例外で投げる）。
+  画面に出す文言への変換は composable 側で `api.describe()` を通す
+- **パネルは設定を 1 項目ずつ `defineModel` で受ける。** 設定のオブジェクトをまるごと
+  `v-model` で渡して子で `settings.value.layout = x` と書くと、`update:settings` が
+  飛ばないまま親のオブジェクトを直接書き換えることになり、v-model が名ばかりになる
+  （親が computed や凍結オブジェクトを渡した瞬間に黙って壊れる）
+
+## 見た目は `src/styles.css` に寄せる
+
+**色を scoped CSS に直書きしない。** 配色は `:root` の CSS 変数にあり、ボタン・入力欄・
+スライダーの見た目もそこで一度だけ当てている。画面はダーク一本（`color-scheme: dark`）。
+
+`.panel` / `.row` / `.note` / `.warn` / `.error` は全画面で共通の並べ方なので
+グローバルに置いてある。scoped 側にはそのコンポーネント固有の配置だけを書く。
+
+ライブラリの小見出しと空の状態文は、同じ文字サイズ・色にしない。
+小見出しを明るく太くし、空の状態文は独立した余白のある領域へ置く。
+素材の取り込みは、ボタン選択とドラッグ＆ドロップの両方を維持する。
+
+## 文言は `src/i18n.ts` に置く（日本語 / 英語）
+
+**画面に出る文字をコンポーネントへ直書きしない。** `t('キー')` で引く。
+`{name}` を含むキーは `t('キー', { name })` で埋める。
+
+- **キーは `ja` に足す。`en` は `Record<keyof typeof ja, string>` なので、
+  足し忘れると typecheck が落ちる**（英語だけ抜けるのを機械で止める。
+  vue-i18n を採らなかったのはこれが効くから。判断の経緯は `CLAUDE.md`）
+- ステータスや種別からキーを引くときは `Record<型, MessageKey>` の表を作る
+  （文字列連結でキーを組むと型が効かない）
+- `.ts` からも呼べる（`format.ts` の単位、`quilt.ts` の食い違いの文、`useBridge.ts` の状態）
+- **テストは locale を明示する。** 既定は `navigator.language` で決まるので、
+  文言を照合するテストは `beforeEach(() => setLocale('ja'))` を置く
+  （置かないと環境の言語で落ちる。実際に落ちた）
+- **`<input type="file">` の見た目と文言はブラウザの言語で決まる。** 訳せないので、
+  自前のボタンから `input.click()` で開く（`SourcePanel.vue`）
+- **文言は文として読める形にする。**「まだ無い」のような語の切れ端を置かない（指摘を受けた）。
+  空の一覧は**「まだありません」の形**にする（行動の指示に置き換えるのも直しすぎ。
+  「書き出すとここに並ぶ」は差し戻された）
+- **`t()` の結果を ref に持ち回さない。** 言語を切り替えても戻らない文言が残る
+  （プレビューの「N フレーム目」で踏んだ）。表示する側の computed で組む
+- 変換 API が返す失敗の文はサーバー側の日本語。ここでは訳さない
+
+## dev サーバーがファイルの変更を拾わないとき
+
+**エージェントのサンドボックスから起動した `npm run dev` は FSEvents が届かず、HMR が黙る。**
+症状は「直したのに画面が変わらない」で、`touch` しても vite のログに `hmr update` が出ない。
+`VITE_USE_POLLING=1 npm run dev` で起動すれば拾う（`vite.config.ts` が見る環境変数）。
+
 ## localhost のポートを他プロジェクトと共有する罠（実際に踏んだ）
+
+ブラウザ検証は専用の独立した Chromium プロファイルを使う。
+Playwright MCP の共有プロファイルは、別セッションの使用中にロックで起動できない。
 
 **別プロジェクトが登録した Service Worker は、ポートが同じなら生き残ってこのアプリの fetch を横取りする。**
 `localhost:5173` に残っていた `sw.js` が `/api/projects` を毎秒 500 回叩き、プレビューが届かなくなった。
@@ -54,14 +115,24 @@ IME が有効なら簡単に起きる。**空欄に意味を持たせている�
 
 `type="text"` + `inputmode="numeric"` で受け、全角を半角へ直してから自分で検証する。
 読めない値は**弾いて赤く見せる**（黙って既定へ落とさない）。実行前に「何をするか」を
-文章で出して確認できるようにする（`QuiltWorkbench.vue` の `parseCount` / `rangeNote`）。
+文章で出して確認できるようにする（`format.ts` の `parseCount`、`ExportPanel.vue` の `plan`）。
+
+## WebGL の canvas は使い回さない（実際に踏んだ）
+
+**`WebGLRenderer.dispose()` の前に `forceContextLoss()` を呼んだ canvas では、二度と
+context を取れない。** 同じ `<canvas>` に新しい `WebGLRenderer` を作ると
+`Cannot read properties of null (reading 'precision')` で落ち、絵が真っ白になる。
+プレビュー（静止画）から変換結果（動画）へ移るときに必ず通る道。
+
+**canvas ごと作り直す**（`QuiltStage.vue` の `:key="source.kind"` と `restart()`）。
+別窓へ移している最中なら、作り直した canvas をその窓へ入れ直す。
 
 ## 自前シェーダーを書くときの罠
 
 - **`ShaderMaterial` ではなく `RawShaderMaterial` を使う。** 前者は `position` / `uv` の宣言と
   フラグメントの出力変数を自動で足すので、自前のシェーダーと二重定義になってコンパイルが落ちる
   （症状は console の `'uv' : redefinition` と `no valid shader program in use`）
-- **シェーダーのコンパイルエラーは console にしか出ない。** `npm run check` も `npm run build` も通る
+- **シェーダーのコンパイルエラーは console にしか出ない。** `npm run check`（build を含む）でも落ちない
 - **シェーダーのコメントにバッククォートを書かない。** GLSL はテンプレートリテラルの中にあるので、
   バッククォートで文字列が途切れる。症状は Prettier が出す GLSL 行の `SyntaxError: ';' expected`
 - **quilt のテクスチャはミップマップを作らせない**（`generateMipmaps = false` と `minFilter = LinearFilter`）。

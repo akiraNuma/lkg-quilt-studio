@@ -1,5 +1,6 @@
 import { createApp } from 'vue'
 import App from './App.vue'
+import './styles.css'
 
 // このアプリは Service Worker を使わない。localhost の同じポートを別プロジェクトで
 // 使っていると、その登録が残って fetch を横取りする（実際に /api/projects を

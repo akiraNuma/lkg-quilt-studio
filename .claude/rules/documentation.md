@@ -6,12 +6,19 @@
 | --- | --- |
 | セットアップ手順・CLI の使い方・実機確認の手順 | `README.md` |
 | AI 向けの運用・検証フロー・設計判断の WHY | `CLAUDE.md` |
-| レイヤ別のコーディング規約 | `.claude/rules/*.md`（`paths:` で条件ロード） |
+| Codex の読み込み入口・条件別の参照先 | `AGENTS.md` |
+| Codex のスキル発見・レビュー担当の登録 | `.agents/skills/` の相対リンク / `.codex/agents/*.toml` |
+| コマンド権限・hook の定義 | `.claude/settings.json`（Codex 用設定は `scripts/sync-harness.py` で生成） |
+| Codex の実行設定・実行権限モード | `.codex/config.toml`（Git で共有） |
+| レイヤ別のコーディング規約 | `.claude/rules/*.md`（共通 hook が条件ロード、未信頼時は `AGENTS.md` から読む） |
 | 外部リファレンス URL・モデル候補・既知の制限 | `.claude/rules/external-apis.md` |
 | レビュー観点 | `.claude/agents/code-reviewer.md`（正本、複製禁止） |
 | ツールのバージョン | `.mise.toml` |
 | Python の整形・lint 設定 | `converter/pyproject.toml`（ruff） |
 | Web の整形ルール | `viewer/.prettierrc` |
+| Web の lint 設定 | `viewer/eslint.config.js` |
+| 画面の配色・フォームの見た目・共通クラス | `viewer/src/styles.css` |
+| 画面の文言（日本語 / 英語） | `viewer/src/i18n.ts` |
 
 - コードから grep で導出できる情報（ディレクトリ構成の詳細、CLI の引数一覧、型定義）を
   ドキュメントに転記しない

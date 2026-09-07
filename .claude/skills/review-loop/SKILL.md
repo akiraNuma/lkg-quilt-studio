@@ -1,6 +1,6 @@
 ---
 name: review-loop
-description: lkg-quilt-studio の変更を code-reviewer サブエージェントでレビューし、MUST/SHOULD が 0 件になるまで「レビュー→修正→再レビュー」を反復する推論的センサー。コミット前に使う。Use for: review-loop, レビュー, コードレビュー
+description: "lkg-quilt-studio の変更を code-reviewer サブエージェントでレビューし、MUST/SHOULD が 0 件になるまで「レビュー→修正→再レビュー」を反復する推論的センサー。コミット前に使う。Use for: review-loop, レビュー, コードレビュー"
 ---
 
 # review-loop — LLM-as-judge レビュー反復
@@ -8,6 +8,8 @@ description: lkg-quilt-studio の変更を code-reviewer サブエージェン�
 ## 前提（計算的センサーが先）
 
 開始前に変更した側の機械チェックが緑であること。落ちていれば先に直す。
+文書・ハーネスだけの変更は、参照先・リンク・設定構文を確認する。
+その場合、アプリの機械チェックを通過済みとは報告しない。
 
 ```bash
 cd converter && uv run poe check   # converter を変更した場合
@@ -18,8 +20,12 @@ cd viewer && npm run check         # viewer を変更した場合
 
 1. `code-reviewer` サブエージェントにレビューを依頼する（観点の正本は**このリポジトリの**
    `.claude/agents/code-reviewer.md`。ここに観点を複製しない）
+   Codex は `.codex/agents/code_reviewer.toml` の担当を使う。
+   名前付き担当を選べない場合は、通常のサブエージェントに正本を読ませる。
+   依頼には対象ファイル・実施した検証・未検証の範囲を含める。
 2. 指摘を MUST / SHOULD / NICE で受け取る
-3. **MUST と SHOULD が 0 件なら終了。** NICE は対応するか見送るかを報告して判断を仰ぐ
+3. **MUST と SHOULD が 0 件なら終了。** NICE は依頼範囲内なら対応する。
+   見送った項目は理由を報告し、製品仕様などユーザーが決める事項だけ判断を仰ぐ
 4. 残っていれば修正する。指摘に納得できない場合は反論せず事実（コード・公式リファレンス）で
    確認し、誤検知ならその根拠を添えて NICE 扱いに落とす
 5. 修正後、前提の機械チェックを再実行して緑を確認する

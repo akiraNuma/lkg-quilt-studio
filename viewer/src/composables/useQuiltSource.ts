@@ -1,4 +1,5 @@
 import { onUnmounted, ref } from 'vue'
+import { t } from '../i18n'
 import { parseQuiltLayout, type QuiltLayout } from '../quilt'
 
 export type QuiltSource = {
@@ -7,6 +8,8 @@ export type QuiltSource = {
   kind: 'video' | 'image'
   /** <video> か <img> に渡す場所 */
   url: string
+  /** プレビュー 1 枚なら何フレーム目か。動画なら null */
+  frameIndex: number | null
   layout: QuiltLayout
   /**
    * Bridge に cast できる場所にあるか。Bridge は別プロセスなので、
@@ -14,10 +17,6 @@ export type QuiltSource = {
    */
   castUri: string | null
 }
-
-const NAMING_HINT =
-  'ファイル名が quilt の規約（例: sample_qs5x9a1.777.mp4）になっていない。' +
-  'converter が付ける名前のまま渡す'
 
 /** quilt 動画の選択と、それに紐づく object URL の後片付けを持つ。 */
 export function useQuiltSource() {
@@ -40,7 +39,7 @@ export function useQuiltSource() {
   function fromFile(file: File): void {
     const layout = parseQuiltLayout(file.name)
     if (layout === null) {
-      error.value = NAMING_HINT
+      error.value = t('quilt.naming')
       return
     }
     releaseObjectUrl()
@@ -50,6 +49,7 @@ export function useQuiltSource() {
       name: file.name,
       kind: 'video',
       url: objectUrl,
+      frameIndex: null,
       layout,
       castUri: null,
     }
@@ -59,7 +59,7 @@ export function useQuiltSource() {
     const trimmed = uri.trim()
     const layout = parseQuiltLayout(trimmed)
     if (trimmed === '' || layout === null) {
-      error.value = NAMING_HINT
+      error.value = t('quilt.naming')
       return
     }
     releaseObjectUrl()
@@ -68,6 +68,7 @@ export function useQuiltSource() {
       name: trimmed.split(/[/\\]/).pop() ?? trimmed,
       kind: 'video',
       url: trimmed,
+      frameIndex: null,
       layout,
       castUri: trimmed,
     }
@@ -80,6 +81,7 @@ export function useQuiltSource() {
   function fromImage(
     blob: Blob,
     name: string,
+    frameIndex: number,
     layout: QuiltLayout
   ): void {
     releaseObjectUrl()
@@ -89,6 +91,7 @@ export function useQuiltSource() {
       name,
       kind: 'image',
       url: objectUrl,
+      frameIndex,
       layout,
       castUri: null,
     }

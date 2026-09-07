@@ -89,6 +89,21 @@ def list_jobs() -> list[dict[str, Any]]:
     return [_as_json(job) for job in store().all()]
 
 
+@app.get("/api/sources")
+def list_sources() -> list[dict[str, Any]]:
+    """取り込み済みの動画。数百 MB がそのまま残るので、画面から消せるようにしてある。"""
+    return [_source_json(source) for source in sources().all()]
+
+
+@app.delete("/api/sources/{source_id}", status_code=204)
+def delete_source(source_id: str) -> None:
+    # 走っているジョブは変換の途中でこの動画を読む。消すと途中で失敗する
+    if store().uses_source(source_id):
+        raise HTTPException(status_code=409, detail="変換中の素材は消せない")
+    if not sources().delete(source_id):
+        raise HTTPException(status_code=404, detail="その入力は無い")
+
+
 @app.post("/api/sources", status_code=201)
 async def create_source(
     file: Annotated[UploadFile, File(description="ステレオ動画")],
@@ -252,10 +267,22 @@ def _preview_error(failure: Exception) -> str:
     return str(failure) or failure.__class__.__name__
 
 
+def _size(path: Path | None) -> int:
+    """成果物の大きさ。**消えていても 0 で返す**（一覧の途中で消されると 500 になる）。"""
+    if path is None:
+        return 0
+    try:
+        return path.stat().st_size
+    except OSError:
+        return 0
+
+
 def _source_json(source: Source) -> dict[str, Any]:
     return {
         "id": source.id,
         "name": source.name,
+        "sizeBytes": sources().size(source.id),
+        "createdAt": source.created_at,
         "width": source.width,
         "height": source.height,
         "fps": source.fps,
@@ -272,8 +299,11 @@ def _as_json(job: Job) -> dict[str, Any]:
         if job.status == "done" and job.output_name
         else None
     )
+    # パスの組み立ては JobStore の仕事。ここで組み直すとディレクトリ構成が二重になる
+    output = store().result_path(job.id, job.output_name) if job.output_name else None
     return {
         "id": job.id,
+        "sizeBytes": _size(output),
         "sourceId": job.source_id,
         "sourceName": job.source_name,
         "status": job.status,

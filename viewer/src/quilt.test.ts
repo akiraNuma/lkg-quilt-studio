@@ -1,9 +1,13 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
+import { setLocale } from './i18n'
 import {
   layoutMismatch,
   matchPreset,
   parseQuiltLayout,
 } from './quilt'
+
+// 文言は言語で変わる。環境の言語に依存させない
+beforeEach(() => setLocale('ja'))
 
 describe('parseQuiltLayout', () => {
   it('ファイル名の規約からレイアウトを読む', () => {

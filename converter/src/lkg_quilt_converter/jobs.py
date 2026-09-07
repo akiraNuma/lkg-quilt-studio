@@ -167,6 +167,14 @@ class JobStore:
             jobs = list(self._jobs.values())
         return sorted(jobs, key=lambda job: job.created_at, reverse=True)
 
+    def uses_source(self, source_id: str) -> bool:
+        """その入力を待機中・実行中のジョブが指しているか。消す前に確かめる。"""
+        with self._lock:
+            return any(
+                job.source_id == source_id and job.status in ("queued", "running")
+                for job in self._jobs.values()
+            )
+
     def result_path(self, job_id: str, filename: str) -> Path | None:
         """成果物の実体を返す。ジョブが未完了か名前が違えば None。"""
         job = self.get(job_id)

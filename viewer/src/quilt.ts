@@ -2,6 +2,8 @@
 // 規約と並び順の出典: https://lookingglassfactory.com/tutorial/what-is-a-quilt
 //   `<stem>_qs<columns>x<rows>a<aspect>.mp4`（例: sample_qs5x9a1.777.mp4）
 
+import { t } from './i18n'
+
 export type QuiltLayout = {
   columns: number
   rows: number
@@ -72,13 +74,19 @@ export function layoutMismatch(
     layout.rows !== display.rows
   ) {
     problems.push(
-      `タイル数が違う（動画 ${layout.columns}x${layout.rows} / 機種 ${display.columns}x${display.rows}）`
+      t('quilt.mismatchTiles', {
+        video: `${layout.columns}x${layout.rows}`,
+        display: `${display.columns}x${display.rows}`,
+      })
     )
   }
   if (Math.abs(layout.aspect - display.quiltAspect) > 0.02) {
     problems.push(
-      `タイルの縦横比が違う（動画 ${layout.aspect} / 機種 ${display.quiltAspect}）`
+      t('quilt.mismatchAspect', {
+        video: layout.aspect,
+        display: display.quiltAspect,
+      })
     )
   }
-  return problems.length ? problems.join('。') : null
+  return problems.length ? problems.join(' / ') : null
 }

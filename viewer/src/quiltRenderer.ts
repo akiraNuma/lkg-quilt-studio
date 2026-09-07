@@ -23,6 +23,7 @@ import {
   type ViewMode,
 } from './lenticular'
 import { viewCount, type QuiltLayout } from './quilt'
+import { t } from './i18n'
 
 // ShaderMaterial ではなく RawShaderMaterial を使う。前者は position / uv の宣言と
 // フラグメントの出力変数を自動で足すので、自前のシェーダーと二重定義になる
@@ -80,7 +81,7 @@ export class QuiltRenderer {
       antialias: false,
     })
     if (!this.renderer.capabilities.isWebGL2) {
-      throw new Error('WebGL2 が使えないブラウザでは表示できない')
+      throw new Error(t('stage.noWebgl'))
     }
     // 静止画は VideoTexture にできない（毎フレーム更新を前提にしている）
     this.texture =
